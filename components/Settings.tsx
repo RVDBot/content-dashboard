@@ -84,7 +84,6 @@ export default function Settings({ onClose }: Props) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [showKey, setShowKey] = useState(false)
   const [showWcSecret, setShowWcSecret] = useState(false)
   const [activeTab, setActiveTab] = useState<'ga4' | 'woocommerce' | 'logs'>('ga4')
   const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
@@ -211,26 +210,88 @@ export default function Settings({ onClose }: Props) {
                   <div>
                     <h3 className="text-text-primary text-[13px] font-semibold mb-1">Service Account</h3>
                     <p className="text-text-tertiary text-[11px] leading-relaxed">
-                      Eén service account voor alle GA4 properties. Voeg het toe als Viewer in elke GA4 property.
+                      Upload het JSON-sleutelbestand van je Google Cloud service account.
                     </p>
                   </div>
-                  <Field
-                    label="Service Account Email"
-                    id="ga4_client_email"
-                    value={settings.ga4_client_email}
-                    onChange={v => setSettings(p => ({ ...p, ga4_client_email: v }))}
-                    placeholder="xxx@xxx.iam.gserviceaccount.com"
-                  />
-                  <Field
-                    label="Private Key"
-                    id="ga4_private_key"
-                    value={settings.ga4_private_key}
-                    onChange={v => setSettings(p => ({ ...p, ga4_private_key: v }))}
-                    show={showKey}
-                    onToggle={() => setShowKey(!showKey)}
-                    placeholder="-----BEGIN PRIVATE KEY-----\n..."
-                    multiline
-                  />
+
+                  {settings.ga4_client_email ? (
+                    <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-lg bg-success/10 flex items-center justify-center">
+                            <svg className="w-3.5 h-3.5 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <path d="M3 8.5l3.5 3.5 6.5-8" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-text-primary text-[13px] font-medium">Service account gekoppeld</p>
+                            <p className="text-text-tertiary text-[11px] font-mono">{settings.ga4_client_email}</p>
+                          </div>
+                        </div>
+                        <label className="text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer">
+                          Wijzigen
+                          <input
+                            type="file"
+                            accept=".json"
+                            className="hidden"
+                            onChange={e => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              const reader = new FileReader()
+                              reader.onload = () => {
+                                try {
+                                  const json = JSON.parse(reader.result as string)
+                                  if (json.client_email && json.private_key) {
+                                    setSettings(p => ({
+                                      ...p,
+                                      ga4_client_email: json.client_email,
+                                      ga4_private_key: json.private_key,
+                                    }))
+                                  }
+                                } catch { /* invalid json */ }
+                              }
+                              reader.readAsText(file)
+                              e.target.value = ''
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="block bg-surface-0 rounded-xl border-2 border-dashed border-border hover:border-accent p-8 text-center cursor-pointer transition-colors duration-150 group">
+                      <div className="w-10 h-10 rounded-xl bg-surface-3 group-hover:bg-accent-subtle flex items-center justify-center mx-auto mb-3 transition-colors">
+                        <svg className="w-5 h-5 text-text-tertiary group-hover:text-accent transition-colors" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                          <path d="M8 3v10M3 8h10" />
+                        </svg>
+                      </div>
+                      <p className="text-text-primary text-[13px] font-medium mb-1">JSON-sleutelbestand uploaden</p>
+                      <p className="text-text-tertiary text-[11px]">Het bestand dat je downloadt bij het aanmaken van een service account key</p>
+                      <input
+                        type="file"
+                        accept=".json"
+                        className="hidden"
+                        onChange={e => {
+                          const file = e.target.files?.[0]
+                          if (!file) return
+                          const reader = new FileReader()
+                          reader.onload = () => {
+                            try {
+                              const json = JSON.parse(reader.result as string)
+                              if (json.client_email && json.private_key) {
+                                setSettings(p => ({
+                                  ...p,
+                                  ga4_client_email: json.client_email,
+                                  ga4_private_key: json.private_key,
+                                }))
+                              }
+                            } catch { /* invalid json */ }
+                          }
+                          reader.readAsText(file)
+                          e.target.value = ''
+                        }}
+                      />
+                    </label>
+                  )}
 
                   <div className="border-t border-border-subtle pt-5">
                     {editingProp ? (
