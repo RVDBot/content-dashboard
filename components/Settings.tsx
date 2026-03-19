@@ -191,7 +191,7 @@ export default function Settings({ onClose }: Props) {
               ].map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => { setActiveTab(tab.id); if (tab.id === 'logs' && logs.length === 0) fetchLogs() }}
+                  onClick={() => { setActiveTab(tab.id); if (tab.id === 'logs') fetchLogs() }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 ${
                     activeTab === tab.id
                       ? 'text-text-primary bg-surface-3'
