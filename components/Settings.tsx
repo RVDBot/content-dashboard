@@ -89,6 +89,7 @@ export default function Settings({ onClose }: Props) {
   const [activeTab, setActiveTab] = useState<'ga4' | 'woocommerce' | 'logs'>('ga4')
   const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
+  const [expandedLog, setExpandedLog] = useState<number | null>(null)
 
   const emptyProp: GA4PropertyForm = {
     name: '', language: 'nl', property_id: '', base_url: '', blog_path: '/blog/',
@@ -411,30 +412,48 @@ export default function Settings({ onClose }: Props) {
                     </div>
                   ) : (
                     <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
-                      {logs.map(log => (
-                        <div key={log.id} className="bg-surface-0 rounded-xl px-3.5 py-2.5 border border-border-subtle">
-                          <div className="flex items-start gap-2">
-                            <span className={`shrink-0 mt-0.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
-                              log.level === 'error' ? 'bg-danger-subtle text-danger' :
-                              log.level === 'warn' ? 'bg-warning-subtle text-warning' :
-                              'bg-surface-3 text-text-tertiary'
-                            }`}>
-                              {log.level}
-                            </span>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-text-primary text-[13px] leading-snug">{log.message}</p>
-                              {log.meta && (
-                                <p className="text-text-tertiary text-[11px] mt-1 font-mono truncate">
-                                  {log.meta}
-                                </p>
-                              )}
+                      {logs.map(log => {
+                        const isExpanded = expandedLog === log.id
+                        const hasMeta = !!log.meta
+                        return (
+                          <div
+                            key={log.id}
+                            onClick={() => hasMeta && setExpandedLog(isExpanded ? null : log.id)}
+                            className={`bg-surface-0 rounded-xl px-3.5 py-2.5 border border-border-subtle transition-colors duration-150 ${
+                              hasMeta ? 'cursor-pointer hover:border-border' : ''
+                            } ${isExpanded ? 'border-border' : ''}`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <span className={`shrink-0 mt-0.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
+                                log.level === 'error' ? 'bg-danger-subtle text-danger' :
+                                log.level === 'warn' ? 'bg-warning-subtle text-warning' :
+                                'bg-surface-3 text-text-tertiary'
+                              }`}>
+                                {log.level}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-text-primary text-[13px] leading-snug">{log.message}</p>
+                                {hasMeta && !isExpanded && (
+                                  <p className="text-text-tertiary text-[11px] mt-1 font-mono truncate">
+                                    {log.meta}
+                                  </p>
+                                )}
+                                {hasMeta && isExpanded && (
+                                  <pre className="text-text-secondary text-[11px] mt-2 font-mono bg-surface-1 border border-border-subtle rounded-lg p-3 whitespace-pre-wrap break-all">
+                                    {(() => {
+                                      try { return JSON.stringify(JSON.parse(log.meta!), null, 2) }
+                                      catch { return log.meta }
+                                    })()}
+                                  </pre>
+                                )}
+                              </div>
+                              <span className="shrink-0 text-text-tertiary text-[11px] tabular-nums">
+                                {new Date(log.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                              </span>
                             </div>
-                            <span className="shrink-0 text-text-tertiary text-[11px] tabular-nums">
-                              {new Date(log.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                            </span>
                           </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   )}
                 </>
