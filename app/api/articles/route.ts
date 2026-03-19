@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb, GA4Property } from '@/lib/db'
 import { fetchBlogArticles, fetchBlogArticlesDaily } from '@/lib/ga4'
+import { fetchPostSlugs } from '@/lib/wordpress'
 import { log } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth-guard'
 
@@ -12,6 +13,13 @@ function getCredentials() {
     clientEmail: get('ga4_client_email'),
     privateKey: get('ga4_private_key'),
   }
+}
+
+function extractSlug(pagePath: string): string {
+  const match = pagePath.match(/\/blog\/(.+?)\/?\s*$/)
+  if (match) return match[1]
+  const segments = pagePath.replace(/\/+$/, '').split('/')
+  return segments[segments.length - 1] || pagePath
 }
 
 export async function GET(req: NextRequest) {
@@ -63,6 +71,23 @@ export async function GET(req: NextRequest) {
 
   const errors: string[] = []
 
+  // Fetch valid blog post slugs from WordPress REST API
+  // Use the first property's base_url or wc_store_url
+  const siteUrl = properties[0]?.base_url ||
+    (db.prepare('SELECT value FROM settings WHERE key = ?').get('wc_store_url') as { value: string } | undefined)?.value || ''
+  let validSlugs: Set<string> | null = null
+  if (siteUrl) {
+    validSlugs = await fetchPostSlugs(siteUrl)
+    if (validSlugs.size === 0) {
+      log('warn', 'Geen post slugs gevonden via WordPress API, alle artikelen worden getoond')
+      validSlugs = null // fallback: show all
+    }
+  }
+
+  // Clear old data on refresh
+  db.prepare('DELETE FROM articles').run()
+  db.prepare('DELETE FROM article_daily').run()
+
   const upsertArticle = db.prepare(`
     INSERT INTO articles (url, title, language, pageviews, sessions, revenue, transactions, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -86,9 +111,6 @@ export async function GET(req: NextRequest) {
       transactions = excluded.transactions
   `)
 
-  // Clear old daily data on refresh
-  db.prepare('DELETE FROM article_daily').run()
-
   for (const prop of properties) {
     try {
       log('info', `GA4 data ophalen voor ${prop.name}`, { property_id: prop.property_id, language: prop.language })
@@ -96,7 +118,13 @@ export async function GET(req: NextRequest) {
 
       // Fetch aggregate (365 days)
       const ga4Data = await fetchBlogArticles(credentials, prop.property_id, prop.blog_path)
+      let skipped = 0
       for (const row of ga4Data) {
+        const slug = extractSlug(row.pagePath)
+        if (validSlugs && !validSlugs.has(slug)) {
+          skipped++
+          continue
+        }
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
         upsertArticle.run(fullUrl, row.pageTitle, prop.language, row.pageviews, row.sessions, row.revenue, row.transactions)
       }
@@ -104,11 +132,13 @@ export async function GET(req: NextRequest) {
       // Fetch daily (30 days)
       const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id, prop.blog_path)
       for (const row of dailyData) {
+        const slug = extractSlug(row.pagePath)
+        if (validSlugs && !validSlugs.has(slug)) continue
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
         upsertDaily.run(fullUrl, row.date, row.pageviews, row.sessions, row.revenue, row.transactions)
       }
 
-      log('info', `${ga4Data.length} artikelen + ${dailyData.length} dagelijkse rijen voor ${prop.name}`)
+      log('info', `${ga4Data.length - skipped} artikelen (${skipped} gefilterd) + dagelijkse data voor ${prop.name}`)
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
       errors.push(`${prop.name}: ${errMsg}`)
@@ -124,7 +154,10 @@ export async function GET(req: NextRequest) {
     url: string; date: string; pageviews: number; sessions: number; revenue: number; transactions: number
   }[]
 
-  log('info', `Data vernieuwd: ${articles.length} artikelen, ${daily.length} dagelijkse rijen`, { errors: errors.length || undefined })
+  log('info', `Data vernieuwd: ${articles.length} artikelen, ${daily.length} dagelijkse rijen`, {
+    valid_slugs: validSlugs?.size || 'niet beschikbaar',
+    errors: errors.length || undefined,
+  })
 
   return NextResponse.json({
     articles: articles.map(a => ({
