@@ -19,12 +19,18 @@ export async function fetchBlogArticles(
   propertyId: string,
   blogPath: string = '/blog/'
 ): Promise<GA4ArticleData[]> {
-  const { clientEmail, privateKey } = credentials
+  const { clientEmail, privateKey: rawKey } = credentials
+
+  // Normalize the private key: handle literal \n from JSON paste, trim whitespace
+  let privateKey = rawKey.trim()
+  if (privateKey.includes('\\n')) {
+    privateKey = privateKey.replace(/\\n/g, '\n')
+  }
 
   const client = new BetaAnalyticsDataClient({
     credentials: {
       client_email: clientEmail,
-      private_key: privateKey.replace(/\\n/g, '\n'),
+      private_key: privateKey,
     },
   })
 
