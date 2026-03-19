@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import Settings from '@/components/Settings'
 
 interface Article {
@@ -14,15 +15,54 @@ interface Article {
   revenuePerSession: number
 }
 
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
-  return (
-    <div className="bg-surface-1 rounded-2xl p-5 border border-border-subtle relative overflow-hidden group hover:border-border transition-colors duration-200">
-      <div className={`absolute top-0 left-0 w-full h-[2px] ${color}`} />
-      <p className="text-text-secondary text-xs font-medium uppercase tracking-wider mb-3">{label}</p>
-      <p className="text-[28px] font-bold text-text-primary leading-none tracking-tight">{value}</p>
-      {sub && <p className="text-text-tertiary text-xs mt-2">{sub}</p>}
-    </div>
-  )
+interface ArticleGroup {
+  slug: string
+  title: string
+  languages: Record<string, Article>
+  totalRevenue: number
+  totalSessions: number
+  totalPageviews: number
+  totalTransactions: number
+}
+
+const LANG_COLORS: Record<string, string> = {
+  en: '#006fff',
+  nl: '#f97316',
+  de: '#64748b',
+  es: '#ef4444',
+  it: '#10b981',
+  fr: '#8b5cf6',
+}
+
+const LANG_LABELS: Record<string, string> = {
+  en: 'Engels',
+  nl: 'Nederlands',
+  de: 'Duits',
+  es: 'Spaans',
+  it: 'Italiaans',
+  fr: 'Frans',
+}
+
+function extractSlug(url: string): string {
+  try {
+    const path = new URL(url).pathname
+    // Remove language prefixes like /en/, /de/, etc. and extract blog slug
+    const match = path.match(/\/blog\/(.+?)\/?\s*$/)
+    if (match) return match[1]
+    // Fallback: last path segment
+    const segments = path.replace(/\/+$/, '').split('/')
+    return segments[segments.length - 1] || url
+  } catch {
+    return url
+  }
+}
+
+function formatCurrency(n: number): string {
+  return `€${n.toLocaleString('nl-NL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+}
+
+function formatNumber(n: number): string {
+  return n.toLocaleString('nl-NL')
 }
 
 function RefreshIcon({ spinning }: { spinning: boolean }) {
@@ -47,11 +87,27 @@ function SortArrow({ active, dir }: { active: boolean; dir: 'asc' | 'desc' }) {
   if (!active) return null
   return (
     <svg className="w-3 h-3 ml-1 inline-block text-accent" viewBox="0 0 12 12" fill="currentColor">
-      {dir === 'desc'
-        ? <path d="M6 9L2 4h8L6 9z" />
-        : <path d="M6 3l4 5H2l4-5z" />
-      }
+      {dir === 'desc' ? <path d="M6 9L2 4h8L6 9z" /> : <path d="M6 3l4 5H2l4-5z" />}
     </svg>
+  )
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function ChartTooltip({ active, payload, label, metric }: any) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-surface-1 border border-border rounded-xl px-4 py-3 shadow-lg shadow-black/8">
+      <p className="text-text-primary text-[12px] font-semibold mb-2 max-w-[200px] truncate">{label}</p>
+      {payload.map((entry: { color: string; name: string; value: number }) => (
+        <div key={entry.name} className="flex items-center gap-2 text-[12px]">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+          <span className="text-text-tertiary">{LANG_LABELS[entry.name] || entry.name.toUpperCase()}</span>
+          <span className="text-text-primary font-semibold ml-auto tabular-nums">
+            {metric === 'revenue' ? formatCurrency(entry.value) : formatNumber(entry.value)}
+          </span>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -59,12 +115,12 @@ export default function Home() {
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [sortBy, setSortBy] = useState<keyof Article>('revenue')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [showSettings, setShowSettings] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [cached, setCached] = useState(false)
-  const [filterLang, setFilterLang] = useState<string>('all')
+  const [chartMetric, setChartMetric] = useState<'revenue' | 'sessions'>('revenue')
+  const [sortBy, setSortBy] = useState<'totalRevenue' | 'totalSessions' | 'totalPageviews' | 'title'>('totalRevenue')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
 
   function loadArticles(refresh = false) {
     const url = refresh ? '/api/articles?refresh=1' : '/api/articles'
@@ -93,32 +149,114 @@ export default function Home() {
 
   useEffect(() => { loadArticles() }, [])
 
-  function toggleSort(col: keyof Article) {
-    if (sortBy === col) {
-      setSortDir(d => d === 'desc' ? 'asc' : 'desc')
-    } else {
-      setSortBy(col)
-      setSortDir('desc')
+  // Group articles by slug
+  const groups = useMemo<ArticleGroup[]>(() => {
+    const map = new Map<string, ArticleGroup>()
+
+    for (const a of articles) {
+      const slug = extractSlug(a.url)
+      let group = map.get(slug)
+      if (!group) {
+        group = {
+          slug,
+          title: '',
+          languages: {},
+          totalRevenue: 0,
+          totalSessions: 0,
+          totalPageviews: 0,
+          totalTransactions: 0,
+        }
+        map.set(slug, group)
+      }
+      if (a.language) {
+        group.languages[a.language] = a
+      }
+      group.totalRevenue += a.revenue
+      group.totalSessions += a.sessions
+      group.totalPageviews += a.pageviews
+      group.totalTransactions += a.transactions
+      // Use English title as base, fallback to first available
+      if (a.language === 'en' || !group.title) {
+        group.title = a.title || slug
+      }
     }
+
+    return [...map.values()]
+  }, [articles])
+
+  // Available languages in data
+  const languages = useMemo(() => {
+    const langs = new Set<string>()
+    articles.forEach(a => { if (a.language) langs.add(a.language) })
+    return [...langs].sort((a, b) => {
+      // EN first, then alphabetical
+      if (a === 'en') return -1
+      if (b === 'en') return 1
+      return a.localeCompare(b)
+    })
+  }, [articles])
+
+  // Sorted groups
+  const sortedGroups = useMemo(() => {
+    return [...groups].sort((a, b) => {
+      let cmp = 0
+      if (sortBy === 'title') cmp = a.title.localeCompare(b.title)
+      else cmp = a[sortBy] - b[sortBy]
+      return sortDir === 'desc' ? -cmp : cmp
+    })
+  }, [groups, sortBy, sortDir])
+
+  // Cumulative chart data
+  const chartData = useMemo(() => {
+    // Sort groups by total of the current metric descending
+    const sorted = [...groups].sort((a, b) =>
+      chartMetric === 'revenue' ? b.totalRevenue - a.totalRevenue : b.totalSessions - a.totalSessions
+    )
+
+    // Build cumulative sums per language
+    const cumulative: Record<string, number> = {}
+    languages.forEach(l => { cumulative[l] = 0 })
+
+    return sorted.map(g => {
+      const point: Record<string, string | number> = {
+        name: g.title.length > 35 ? g.title.slice(0, 32) + '...' : g.title,
+        fullName: g.title,
+      }
+      for (const lang of languages) {
+        const article = g.languages[lang]
+        if (article) {
+          cumulative[lang] += chartMetric === 'revenue' ? article.revenue : article.sessions
+        }
+        point[lang] = Math.round(cumulative[lang] * 100) / 100
+      }
+      return point
+    })
+  }, [groups, languages, chartMetric])
+
+  // Revenue breakdown per language
+  const langBreakdown = useMemo(() => {
+    const totals: Record<string, { revenue: number; sessions: number; articles: number }> = {}
+    for (const a of articles) {
+      const lang = a.language || 'unknown'
+      if (!totals[lang]) totals[lang] = { revenue: 0, sessions: 0, articles: 0 }
+      totals[lang].revenue += a.revenue
+      totals[lang].sessions += a.sessions
+      totals[lang].articles++
+    }
+    return Object.entries(totals).sort((a, b) => b[1].revenue - a[1].revenue)
+  }, [articles])
+
+  const totalRevenue = articles.reduce((s, a) => s + a.revenue, 0)
+  const totalSessions = articles.reduce((s, a) => s + a.sessions, 0)
+
+  function toggleSort(col: typeof sortBy) {
+    if (sortBy === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    else { setSortBy(col); setSortDir('desc') }
   }
-
-  const languages = [...new Set(articles.map(a => a.language).filter(Boolean))] as string[]
-  const filtered = filterLang === 'all' ? articles : articles.filter(a => a.language === filterLang)
-
-  const sorted = [...filtered].sort((a, b) => {
-    const av = a[sortBy], bv = b[sortBy]
-    const cmp = typeof av === 'number' ? (av as number) - (bv as number) : String(av).localeCompare(String(bv))
-    return sortDir === 'desc' ? -cmp : cmp
-  })
-
-  const totalRevenue = filtered.reduce((s, a) => s + a.revenue, 0)
-  const totalSessions = filtered.reduce((s, a) => s + a.sessions, 0)
-  const totalTransactions = filtered.reduce((s, a) => s + a.transactions, 0)
-  const avgRevenuePerSession = totalSessions > 0 ? totalRevenue / totalSessions : 0
 
   return (
     <div className="min-h-screen">
-      {/* Top bar */}
+      {/* Header */}
       <header className="sticky top-0 z-40 bg-surface-0/80 backdrop-blur-xl border-b border-border-subtle">
         <div className="max-w-[1400px] mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -131,24 +269,9 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            {languages.length > 1 && (
-              <select
-                value={filterLang}
-                onChange={e => setFilterLang(e.target.value)}
-                className="bg-surface-2 text-text-secondary text-xs font-medium px-3 py-1.5 rounded-lg border border-border-subtle outline-none hover:border-border focus:border-accent transition-colors cursor-pointer appearance-none pr-7"
-                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='%236b7075'%3E%3Cpath d='M6 8L2 4h8L6 8z'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
-              >
-                <option value="all">Alle talen</option>
-                {languages.sort().map(l => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
-                ))}
-              </select>
-            )}
-
             {cached && (
               <span className="text-text-tertiary text-[11px] bg-surface-2 px-2 py-1 rounded-md">Cache</span>
             )}
-
             <button
               onClick={() => loadArticles(true)}
               disabled={refreshing}
@@ -157,7 +280,6 @@ export default function Home() {
             >
               <RefreshIcon spinning={refreshing} />
             </button>
-
             <button
               onClick={() => setShowSettings(true)}
               className="p-2 rounded-lg text-text-tertiary hover:text-text-secondary hover:bg-surface-2 transition-all duration-150"
@@ -170,46 +292,19 @@ export default function Home() {
       </header>
 
       <main className="max-w-[1400px] mx-auto px-6 py-6">
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          <StatCard
-            label="Omzet"
-            value={`€${totalRevenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-            sub="Afgelopen 365 dagen"
-            color="bg-success"
-          />
-          <StatCard
-            label="Sessies"
-            value={totalSessions.toLocaleString('nl-NL')}
-            color="bg-accent"
-          />
-          <StatCard
-            label="Transacties"
-            value={totalTransactions.toLocaleString('nl-NL')}
-            color="bg-warning"
-          />
-          <StatCard
-            label="Omzet / sessie"
-            value={`€${avgRevenuePerSession.toFixed(2)}`}
-            color="bg-[#8b5cf6]"
-          />
-        </div>
-
         {/* Loading */}
         {loading && (
-          <div className="bg-surface-1 rounded-2xl border border-border-subtle overflow-hidden">
-            <div className="px-5 py-3 border-b border-border-subtle">
-              <div className="skeleton h-4 w-24" />
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 mb-6">
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-6">
+              <div className="skeleton h-4 w-40 mb-4" />
+              <div className="skeleton h-[280px] w-full rounded-xl" />
             </div>
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="px-5 py-3.5 flex items-center gap-4 border-b border-border-subtle last:border-0">
-                <div className="skeleton h-4 flex-1" />
-                <div className="skeleton h-4 w-12" />
-                <div className="skeleton h-4 w-16" />
-                <div className="skeleton h-4 w-14" />
-                <div className="skeleton h-4 w-16" />
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle p-6">
+              <div className="skeleton h-4 w-24 mb-4" />
+              <div className="space-y-3">
+                {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-12 w-full rounded-xl" />)}
               </div>
-            ))}
+            </div>
           </div>
         )}
 
@@ -217,102 +312,301 @@ export default function Home() {
         {error && (
           <div className="bg-danger-subtle border border-danger/20 rounded-2xl p-5 mb-6">
             <p className="text-danger text-sm font-medium">{error}</p>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="text-accent text-xs mt-2 hover:underline font-medium"
-            >
+            <button onClick={() => setShowSettings(true)} className="text-accent text-xs mt-2 hover:underline font-medium">
               Instellingen openen
             </button>
           </div>
         )}
 
-        {/* Table */}
-        {!loading && !error && (
-          <div className="bg-surface-1 rounded-2xl border border-border-subtle overflow-hidden">
-            {/* Table header info */}
-            <div className="px-5 py-3 border-b border-border-subtle flex items-center justify-between">
-              <span className="text-text-secondary text-xs font-medium">
-                {sorted.length} artikel{sorted.length !== 1 ? 'en' : ''}
-                {filterLang !== 'all' && ` in ${filterLang.toUpperCase()}`}
-              </span>
+        {!loading && !error && articles.length > 0 && (
+          <>
+            {/* Chart + Revenue breakdown */}
+            <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 mb-6">
+              {/* Cumulative chart */}
+              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-6">
+                <div className="flex items-center justify-between mb-5">
+                  <h2 className="text-text-primary text-[14px] font-semibold">
+                    Cumulatieve {chartMetric === 'revenue' ? 'omzet' : 'bezoekers'} per taal
+                  </h2>
+                  <div className="flex bg-surface-0 rounded-lg p-0.5 border border-border-subtle">
+                    <button
+                      onClick={() => setChartMetric('revenue')}
+                      className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-all duration-150 ${
+                        chartMetric === 'revenue'
+                          ? 'bg-surface-1 text-text-primary shadow-sm'
+                          : 'text-text-tertiary hover:text-text-secondary'
+                      }`}
+                    >
+                      Omzet
+                    </button>
+                    <button
+                      onClick={() => setChartMetric('sessions')}
+                      className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-all duration-150 ${
+                        chartMetric === 'sessions'
+                          ? 'bg-surface-1 text-text-primary shadow-sm'
+                          : 'text-text-tertiary hover:text-text-secondary'
+                      }`}
+                    >
+                      Bezoekers
+                    </button>
+                  </div>
+                </div>
+
+                {/* Legend */}
+                <div className="flex flex-wrap gap-4 mb-4">
+                  {languages.map(lang => (
+                    <div key={lang} className="flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: LANG_COLORS[lang] || '#94a3b8' }} />
+                      <span className="text-text-secondary text-[12px] font-medium">{LANG_LABELS[lang] || lang.toUpperCase()}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="h-[280px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" />
+                      <XAxis
+                        dataKey="name"
+                        tick={false}
+                        axisLine={{ stroke: 'var(--color-border)' }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)' }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={v => chartMetric === 'revenue' ? `€${(v / 1000).toFixed(0)}k` : v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                        width={52}
+                      />
+                      <Tooltip content={<ChartTooltip metric={chartMetric} />} />
+                      {languages.map(lang => (
+                        <Line
+                          key={lang}
+                          type="monotone"
+                          dataKey={lang}
+                          stroke={LANG_COLORS[lang] || '#94a3b8'}
+                          strokeWidth={2}
+                          dot={false}
+                          activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }}
+                        />
+                      ))}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <p className="text-text-tertiary text-[11px] mt-3">
+                  {groups.length} artikelen, gesorteerd op {chartMetric === 'revenue' ? 'omzet' : 'bezoekers'} (hoogste eerst)
+                </p>
+              </div>
+
+              {/* Revenue breakdown */}
+              <div className="bg-surface-1 rounded-2xl border border-border-subtle p-6">
+                <h2 className="text-text-primary text-[14px] font-semibold mb-5">Omzet per taal</h2>
+
+                {/* Total */}
+                <div className="bg-surface-0 rounded-xl p-4 mb-4 border border-border-subtle">
+                  <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Totaal</p>
+                  <p className="text-[24px] font-bold text-text-primary tracking-tight leading-none">
+                    {formatCurrency(totalRevenue)}
+                  </p>
+                  <p className="text-text-tertiary text-[12px] mt-1.5">
+                    {formatNumber(totalSessions)} bezoekers
+                  </p>
+                </div>
+
+                {/* Per language */}
+                <div className="space-y-2">
+                  {langBreakdown.map(([lang, data]) => {
+                    const pct = totalRevenue > 0 ? (data.revenue / totalRevenue) * 100 : 0
+                    return (
+                      <div key={lang} className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: LANG_COLORS[lang] || '#94a3b8' }}
+                            />
+                            <span className="text-text-primary text-[13px] font-medium">
+                              {LANG_LABELS[lang] || lang.toUpperCase()}
+                            </span>
+                          </div>
+                          <span className="text-text-primary text-[13px] font-semibold tabular-nums">
+                            {formatCurrency(data.revenue)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex-1 bg-surface-3 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: LANG_COLORS[lang] || '#94a3b8',
+                              }}
+                            />
+                          </div>
+                          <span className="text-text-tertiary text-[11px] tabular-nums w-10 text-right">
+                            {pct.toFixed(0)}%
+                          </span>
+                        </div>
+                        <p className="text-text-tertiary text-[11px] mt-1.5">
+                          {data.articles} artikelen &middot; {formatNumber(data.sessions)} bezoekers
+                        </p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="border-b border-border-subtle">
-                    {([
-                      { key: 'title' as const, label: 'Artikel', align: 'left' },
-                      { key: 'language' as const, label: 'Taal', align: 'center' },
-                      { key: 'pageviews' as const, label: 'Pageviews', align: 'right' },
-                      { key: 'sessions' as const, label: 'Sessies', align: 'right' },
-                      { key: 'transactions' as const, label: 'Transacties', align: 'right' },
-                      { key: 'revenue' as const, label: 'Omzet', align: 'right' },
-                      { key: 'revenuePerSession' as const, label: 'Per sessie', align: 'right' },
-                    ] as const).map(col => (
+            {/* Article table */}
+            <div className="bg-surface-1 rounded-2xl border border-border-subtle overflow-hidden">
+              <div className="px-5 py-3 border-b border-border-subtle flex items-center justify-between">
+                <span className="text-text-secondary text-xs font-medium">
+                  {groups.length} unieke artikel{groups.length !== 1 ? 'en' : ''}
+                </span>
+                <span className="text-text-tertiary text-[11px]">
+                  Engelse titel als referentie
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="border-b border-border-subtle">
                       <th
-                        key={col.key}
-                        onClick={() => toggleSort(col.key)}
-                        className={`px-5 py-3 font-medium text-text-tertiary text-xs uppercase tracking-wider cursor-pointer select-none hover:text-text-secondary transition-colors ${
-                          col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'
-                        } ${sortBy === col.key ? 'text-text-secondary' : ''}`}
+                        onClick={() => toggleSort('title')}
+                        className={`px-5 py-3 text-left font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-text-secondary transition-colors ${sortBy === 'title' ? 'text-text-secondary' : 'text-text-tertiary'}`}
                       >
-                        {col.label}
-                        <SortArrow active={sortBy === col.key} dir={sortDir} />
+                        Artikel
+                        <SortArrow active={sortBy === 'title'} dir={sortDir} />
                       </th>
+                      <th className="px-3 py-3 text-center font-medium text-text-tertiary text-xs uppercase tracking-wider">
+                        Talen
+                      </th>
+                      <th
+                        onClick={() => toggleSort('totalPageviews')}
+                        className={`px-5 py-3 text-right font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-text-secondary transition-colors ${sortBy === 'totalPageviews' ? 'text-text-secondary' : 'text-text-tertiary'}`}
+                      >
+                        Pageviews
+                        <SortArrow active={sortBy === 'totalPageviews'} dir={sortDir} />
+                      </th>
+                      <th
+                        onClick={() => toggleSort('totalSessions')}
+                        className={`px-5 py-3 text-right font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-text-secondary transition-colors ${sortBy === 'totalSessions' ? 'text-text-secondary' : 'text-text-tertiary'}`}
+                      >
+                        Bezoekers
+                        <SortArrow active={sortBy === 'totalSessions'} dir={sortDir} />
+                      </th>
+                      <th
+                        onClick={() => toggleSort('totalRevenue')}
+                        className={`px-5 py-3 text-right font-medium text-xs uppercase tracking-wider cursor-pointer select-none hover:text-text-secondary transition-colors ${sortBy === 'totalRevenue' ? 'text-text-secondary' : 'text-text-tertiary'}`}
+                      >
+                        Omzet
+                        <SortArrow active={sortBy === 'totalRevenue'} dir={sortDir} />
+                      </th>
+                      {/* Per-language revenue columns */}
+                      {languages.map(lang => (
+                        <th key={lang} className="px-3 py-3 text-right font-medium text-text-tertiary text-xs uppercase tracking-wider">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: LANG_COLORS[lang] || '#94a3b8' }} />
+                            {lang.toUpperCase()}
+                          </span>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedGroups.length === 0 && (
+                      <tr>
+                        <td colSpan={5 + languages.length} className="px-5 py-16 text-center">
+                          <p className="text-text-tertiary text-sm">Geen artikelen gevonden</p>
+                          <button onClick={() => loadArticles(true)} className="mt-3 text-accent text-xs font-medium hover:underline">
+                            Data ophalen
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                    {sortedGroups.map((g, i) => (
+                      <tr
+                        key={g.slug}
+                        className="border-b border-border-subtle last:border-0 hover:bg-surface-hover transition-colors duration-100 animate-row"
+                        style={{ animationDelay: `${Math.min(i * 15, 300)}ms` }}
+                      >
+                        <td className="px-5 py-3.5 max-w-[360px]">
+                          <span className="text-text-primary font-medium truncate block" title={g.title}>
+                            {g.title}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {languages.map(lang => (
+                              <span
+                                key={lang}
+                                className={`w-2 h-2 rounded-full ${g.languages[lang] ? '' : 'opacity-15'}`}
+                                style={{ backgroundColor: LANG_COLORS[lang] || '#94a3b8' }}
+                                title={`${LANG_LABELS[lang] || lang.toUpperCase()}${g.languages[lang] ? '' : ' (niet beschikbaar)'}`}
+                              />
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5 text-right text-text-secondary tabular-nums">
+                          {formatNumber(g.totalPageviews)}
+                        </td>
+                        <td className="px-5 py-3.5 text-right text-text-secondary tabular-nums">
+                          {formatNumber(g.totalSessions)}
+                        </td>
+                        <td className="px-5 py-3.5 text-right tabular-nums">
+                          <span className={g.totalRevenue > 0 ? 'text-success font-semibold' : 'text-text-tertiary'}>
+                            {formatCurrency(g.totalRevenue)}
+                          </span>
+                        </td>
+                        {languages.map(lang => {
+                          const a = g.languages[lang]
+                          return (
+                            <td key={lang} className="px-3 py-3.5 text-right tabular-nums text-[12px]">
+                              {a ? (
+                                <span className={a.revenue > 0 ? 'text-text-secondary' : 'text-text-tertiary'}>
+                                  {formatCurrency(a.revenue)}
+                                </span>
+                              ) : (
+                                <span className="text-text-tertiary/30">—</span>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
                     ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-5 py-16 text-center">
-                        <p className="text-text-tertiary text-sm">Geen artikelen gevonden</p>
-                        <button
-                          onClick={() => loadArticles(true)}
-                          className="mt-3 text-accent text-xs font-medium hover:underline"
-                        >
-                          Data ophalen
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                  {sorted.map((a, i) => (
-                    <tr
-                      key={a.url}
-                      className="border-b border-border-subtle last:border-0 hover:bg-surface-hover transition-colors duration-100 animate-row"
-                      style={{ animationDelay: `${Math.min(i * 20, 300)}ms` }}
-                    >
-                      <td className="px-5 py-3.5 max-w-[400px]">
-                        <a
-                          href={a.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-text-primary hover:text-accent transition-colors duration-150 truncate block font-medium"
-                        >
-                          {a.title || a.url}
-                        </a>
-                      </td>
-                      <td className="px-5 py-3.5 text-center">
-                        <span className="text-[11px] font-semibold text-text-tertiary bg-surface-3 px-2 py-0.5 rounded-md">
-                          {a.language?.toUpperCase() || '—'}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right text-text-secondary tabular-nums">{a.pageviews.toLocaleString('nl-NL')}</td>
-                      <td className="px-5 py-3.5 text-right text-text-secondary tabular-nums">{a.sessions.toLocaleString('nl-NL')}</td>
-                      <td className="px-5 py-3.5 text-right text-text-secondary tabular-nums">{a.transactions}</td>
-                      <td className="px-5 py-3.5 text-right tabular-nums">
-                        <span className={a.revenue > 0 ? 'text-success font-semibold' : 'text-text-tertiary'}>
-                          €{a.revenue.toLocaleString('nl-NL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right text-text-secondary tabular-nums">
-                        €{a.revenuePerSession.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Empty state */}
+        {!loading && !error && articles.length === 0 && (
+          <div className="bg-surface-1 rounded-2xl border border-border-subtle p-16 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-surface-0 border border-border-subtle flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-text-tertiary" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3zm0 5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8z" />
+              </svg>
+            </div>
+            <p className="text-text-primary text-[14px] font-semibold mb-1">Geen data beschikbaar</p>
+            <p className="text-text-tertiary text-[13px] mb-4">Configureer je GA4 properties en haal data op.</p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setShowSettings(true)}
+                className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-xl transition-colors duration-150"
+              >
+                Instellingen
+              </button>
+              <button
+                onClick={() => loadArticles(true)}
+                className="text-[13px] text-text-tertiary hover:text-text-secondary px-4 py-2 rounded-xl hover:bg-surface-3 transition-colors duration-150"
+              >
+                Data ophalen
+              </button>
             </div>
           </div>
         )}
