@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { requireAuth } from '@/lib/auth-guard'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const denied = requireAuth(req); if (denied) return denied
   const db = getDb()
   const properties = db.prepare('SELECT * FROM ga4_properties ORDER BY language ASC').all()
   return NextResponse.json(properties)
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireAuth(req); if (denied) return denied
   const body = await req.json()
   const { name, language, property_id, base_url, blog_path } = body
 
@@ -24,6 +27,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const denied = requireAuth(req); if (denied) return denied
   const body = await req.json()
   const { id, name, language, property_id, base_url, blog_path } = body
 
@@ -38,6 +42,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const denied = requireAuth(req); if (denied) return denied
   const body = await req.json()
   const { id } = body
 

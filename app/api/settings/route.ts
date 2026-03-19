@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { requireAuth } from '@/lib/auth-guard'
 
 const SETTINGS_KEYS = [
   'ga4_client_email',
@@ -11,7 +12,8 @@ const SETTINGS_KEYS = [
 
 const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret']
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const denied = requireAuth(req); if (denied) return denied
   const db = getDb()
   const result: Record<string, string> = {}
   for (const key of SETTINGS_KEYS) {
@@ -26,6 +28,7 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
+  const denied = requireAuth(req); if (denied) return denied
   const body = await req.json()
   const db = getDb()
 

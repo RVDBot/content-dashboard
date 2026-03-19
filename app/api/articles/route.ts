@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb, GA4Property } from '@/lib/db'
 import { fetchBlogArticles } from '@/lib/ga4'
 import { log } from '@/lib/logger'
+import { requireAuth } from '@/lib/auth-guard'
 
 function getCredentials() {
   const db = getDb()
@@ -14,6 +15,7 @@ function getCredentials() {
 }
 
 export async function GET(req: NextRequest) {
+  const denied = requireAuth(req); if (denied) return denied
   const refresh = req.nextUrl.searchParams.get('refresh') === '1'
   const db = getDb()
 
