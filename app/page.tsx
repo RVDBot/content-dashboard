@@ -6,6 +6,7 @@ import Settings from '@/components/Settings'
 interface Article {
   url: string
   title: string
+  language: string | null
   pageviews: number
   sessions: number
   revenue: number
@@ -22,6 +23,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [cached, setCached] = useState(false)
+  const [filterLang, setFilterLang] = useState<string>('all')
 
   function loadArticles(refresh = false) {
     const url = refresh ? '/api/articles?refresh=1' : '/api/articles'
@@ -53,15 +55,18 @@ export default function Home() {
     }
   }
 
-  const sorted = [...articles].sort((a, b) => {
+  const languages = [...new Set(articles.map(a => a.language).filter(Boolean))] as string[]
+  const filtered = filterLang === 'all' ? articles : articles.filter(a => a.language === filterLang)
+
+  const sorted = [...filtered].sort((a, b) => {
     const av = a[sortBy], bv = b[sortBy]
     const cmp = typeof av === 'number' ? (av as number) - (bv as number) : String(av).localeCompare(String(bv))
     return sortDir === 'desc' ? -cmp : cmp
   })
 
-  const totalRevenue = articles.reduce((s, a) => s + a.revenue, 0)
-  const totalSessions = articles.reduce((s, a) => s + a.sessions, 0)
-  const totalTransactions = articles.reduce((s, a) => s + a.transactions, 0)
+  const totalRevenue = filtered.reduce((s, a) => s + a.revenue, 0)
+  const totalSessions = filtered.reduce((s, a) => s + a.sessions, 0)
+  const totalTransactions = filtered.reduce((s, a) => s + a.transactions, 0)
 
   const SortIcon = ({ col }: { col: keyof Article }) => (
     <span className="ml-1 text-gray-500">{sortBy === col ? (sortDir === 'desc' ? '↓' : '↑') : ''}</span>
@@ -72,6 +77,18 @@ export default function Home() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Content Dashboard</h1>
         <div className="flex items-center gap-3">
+          {languages.length > 1 && (
+            <select
+              value={filterLang}
+              onChange={e => setFilterLang(e.target.value)}
+              className="bg-gray-800 text-gray-300 text-sm px-2 py-1.5 rounded-lg border border-gray-700 outline-none"
+            >
+              <option value="all">Alle talen</option>
+              {languages.sort().map(l => (
+                <option key={l} value={l}>{l.toUpperCase()}</option>
+              ))}
+            </select>
+          )}
           {cached && (
             <span className="text-gray-500 text-xs">Uit cache</span>
           )}
@@ -124,6 +141,9 @@ export default function Home() {
                   <th className="px-4 py-3 font-medium cursor-pointer hover:text-gray-200" onClick={() => toggleSort('title')}>
                     Artikel<SortIcon col="title" />
                   </th>
+                  <th className="px-4 py-3 font-medium cursor-pointer hover:text-gray-200" onClick={() => toggleSort('language')}>
+                    Taal<SortIcon col="language" />
+                  </th>
                   <th className="px-4 py-3 font-medium text-right cursor-pointer hover:text-gray-200" onClick={() => toggleSort('pageviews')}>
                     Pageviews<SortIcon col="pageviews" />
                   </th>
@@ -143,7 +163,7 @@ export default function Home() {
               </thead>
               <tbody>
                 {sorted.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Geen artikelen gevonden</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">Geen artikelen gevonden</td></tr>
                 )}
                 {sorted.map((a, i) => (
                   <tr key={a.url} className={`border-b border-gray-800/50 hover:bg-gray-800/30 ${i % 2 === 0 ? '' : 'bg-gray-900/50'}`}>
@@ -152,6 +172,7 @@ export default function Home() {
                         {a.title || a.url}
                       </a>
                     </td>
+                    <td className="px-4 py-3 text-center text-gray-400 text-xs">{a.language?.toUpperCase() || '—'}</td>
                     <td className="px-4 py-3 text-right text-gray-300">{a.pageviews.toLocaleString('nl-NL')}</td>
                     <td className="px-4 py-3 text-right text-gray-300">{a.sessions.toLocaleString('nl-NL')}</td>
                     <td className="px-4 py-3 text-right text-gray-300">{a.transactions}</td>

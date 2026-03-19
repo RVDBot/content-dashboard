@@ -49,20 +49,38 @@ function Field({ label, id, value, onChange, show, onToggle, placeholder, multil
   )
 }
 
+interface GA4PropertyForm {
+  id?: number
+  name: string
+  language: string
+  property_id: string
+  base_url: string
+  blog_path: string
+}
+
+const LANGUAGES = [
+  { code: 'nl', label: 'Nederlands' },
+  { code: 'en', label: 'Engels' },
+  { code: 'de', label: 'Duits' },
+  { code: 'es', label: 'Spaans' },
+  { code: 'it', label: 'Italiaans' },
+  { code: 'fr', label: 'Frans' },
+]
+
 interface Props {
   onClose: () => void
 }
 
 export default function Settings({ onClose }: Props) {
   const [settings, setSettings] = useState({
-    ga4_property_id: '',
     ga4_client_email: '',
     ga4_private_key: '',
     wc_store_url: '',
     wc_consumer_key: '',
     wc_consumer_secret: '',
-    blog_url_pattern: '',
   })
+  const [properties, setProperties] = useState<(GA4PropertyForm & { id: number })[]>([])
+  const [editingProp, setEditingProp] = useState<GA4PropertyForm | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -70,13 +88,24 @@ export default function Settings({ onClose }: Props) {
   const [showWcSecret, setShowWcSecret] = useState(false)
   const [activeTab, setActiveTab] = useState<'ga4' | 'woocommerce'>('ga4')
 
+  const emptyProp: GA4PropertyForm = {
+    name: '', language: 'nl', property_id: '', base_url: '', blog_path: '/blog/',
+  }
+
+  async function fetchProperties() {
+    const res = await fetch('/api/properties')
+    setProperties(await res.json())
+  }
+
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
-      .then(data => {
-        setSettings(prev => ({ ...prev, ...data }))
-        setLoading(false)
-      })
+    Promise.all([
+      fetch('/api/settings').then(r => r.json()),
+      fetch('/api/properties').then(r => r.json()),
+    ]).then(([settingsData, propsData]) => {
+      setSettings(prev => ({ ...prev, ...settingsData }))
+      setProperties(propsData)
+      setLoading(false)
+    })
   }, [])
 
   async function save() {
@@ -91,9 +120,31 @@ export default function Settings({ onClose }: Props) {
     setTimeout(() => setSaved(false), 2000)
   }
 
+  async function saveProp() {
+    if (!editingProp || !editingProp.name || !editingProp.property_id) return
+    const method = editingProp.id ? 'PUT' : 'POST'
+    await fetch('/api/properties', {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(editingProp),
+    })
+    await fetchProperties()
+    setEditingProp(null)
+  }
+
+  async function deleteProp(id: number, name: string) {
+    if (!confirm(`Property "${name}" verwijderen?`)) return
+    await fetch('/api/properties', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    await fetchProperties()
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-[520px] max-h-[85vh] mx-4 flex flex-col shadow-2xl">
+      <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-[580px] max-h-[85vh] mx-4 flex flex-col shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
           <h2 className="text-gray-100 font-semibold">Instellingen</h2>
@@ -130,17 +181,11 @@ export default function Settings({ onClose }: Props) {
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               {activeTab === 'ga4' && (
                 <>
-                  <h3 className="text-gray-100 font-medium text-sm">GA4 Data API</h3>
+                  {/* Service account credentials (shared) */}
+                  <h3 className="text-gray-100 font-medium text-sm">Service Account</h3>
                   <p className="text-gray-500 text-xs">
-                    Maak een service account aan in Google Cloud Console, enable de GA4 Data API, en voeg het service account toe als Viewer in GA4.
+                    Eén service account voor alle GA4 properties. Voeg het toe als Viewer in elke GA4 property.
                   </p>
-                  <Field
-                    label="Property ID"
-                    id="ga4_property_id"
-                    value={settings.ga4_property_id}
-                    onChange={v => setSettings(p => ({ ...p, ga4_property_id: v }))}
-                    placeholder="123456789"
-                  />
                   <Field
                     label="Service Account Email"
                     id="ga4_client_email"
@@ -149,7 +194,7 @@ export default function Settings({ onClose }: Props) {
                     placeholder="xxx@xxx.iam.gserviceaccount.com"
                   />
                   <Field
-                    label="Private Key (uit JSON key file)"
+                    label="Private Key"
                     id="ga4_private_key"
                     value={settings.ga4_private_key}
                     onChange={v => setSettings(p => ({ ...p, ga4_private_key: v }))}
@@ -158,13 +203,101 @@ export default function Settings({ onClose }: Props) {
                     placeholder="-----BEGIN PRIVATE KEY-----\n..."
                     multiline
                   />
-                  <Field
-                    label="Blog URL patroon (optioneel)"
-                    id="blog_url_pattern"
-                    value={settings.blog_url_pattern}
-                    onChange={v => setSettings(p => ({ ...p, blog_url_pattern: v }))}
-                    placeholder="/blog/ (standaard)"
-                  />
+
+                  <hr className="border-gray-800" />
+
+                  {/* Properties list */}
+                  {editingProp ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => setEditingProp(null)} className="text-gray-400 hover:text-gray-200 text-sm">&larr;</button>
+                        <h3 className="text-gray-100 font-medium text-sm">
+                          {editingProp.id ? 'Property bewerken' : 'Nieuwe property'}
+                        </h3>
+                      </div>
+                      <Field label="Naam" id="prop_name" value={editingProp.name} onChange={v => setEditingProp(p => p && ({ ...p, name: v }))} placeholder="Bijv. SpeedRope NL" />
+                      <div className="space-y-1.5">
+                        <label className="text-gray-400 text-xs font-medium">Taal</label>
+                        <select
+                          value={editingProp.language}
+                          onChange={e => setEditingProp(p => p && ({ ...p, language: e.target.value }))}
+                          className="w-full bg-gray-800 text-gray-100 text-sm px-3 py-2 rounded-lg outline-none border border-gray-700 focus:border-emerald-500"
+                        >
+                          {LANGUAGES.map(l => (
+                            <option key={l.code} value={l.code}>{l.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <Field label="GA4 Property ID" id="prop_id" value={editingProp.property_id} onChange={v => setEditingProp(p => p && ({ ...p, property_id: v }))} placeholder="123456789" />
+                      <Field label="Base URL" id="prop_base_url" value={editingProp.base_url} onChange={v => setEditingProp(p => p && ({ ...p, base_url: v }))} placeholder="https://speedropeshop.com" />
+                      <Field label="Blog pad" id="prop_blog_path" value={editingProp.blog_path} onChange={v => setEditingProp(p => p && ({ ...p, blog_path: v }))} placeholder="/blog/" />
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={saveProp}
+                          className="bg-emerald-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-emerald-600 transition-colors"
+                        >
+                          {editingProp.id ? 'Bijwerken' : 'Toevoegen'}
+                        </button>
+                        <button
+                          onClick={() => setEditingProp(null)}
+                          className="text-sm text-gray-400 hover:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
+                        >
+                          Annuleren
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-gray-100 font-medium text-sm">GA4 Properties</h3>
+                        <button
+                          onClick={() => setEditingProp({ ...emptyProp })}
+                          className="text-xs text-emerald-400 hover:underline"
+                        >
+                          + Property toevoegen
+                        </button>
+                      </div>
+                      {properties.length === 0 ? (
+                        <div className="bg-gray-800 rounded-lg p-4 text-center">
+                          <p className="text-gray-400 text-sm">Geen properties geconfigureerd</p>
+                          <button
+                            onClick={() => setEditingProp({ ...emptyProp })}
+                            className="mt-2 text-xs text-emerald-400 hover:underline"
+                          >
+                            Voeg je eerste property toe
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {properties.map(prop => (
+                            <div key={prop.id} className="bg-gray-800 rounded-lg p-3">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <span className="text-gray-100 text-sm font-medium">{prop.name}</span>
+                                  <span className="ml-2 text-gray-500 text-xs">{prop.language.toUpperCase()}</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => setEditingProp({ ...prop })}
+                                    className="text-gray-400 hover:text-gray-200 text-xs px-2 py-1"
+                                  >
+                                    Bewerken
+                                  </button>
+                                  <button
+                                    onClick={() => deleteProp(prop.id, prop.name)}
+                                    className="text-gray-400 hover:text-red-400 text-xs px-2 py-1"
+                                  >
+                                    Verwijder
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="text-gray-500 text-xs mt-0.5">Property: {prop.property_id} &middot; {prop.base_url || '(geen URL)'}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </>
               )}
 

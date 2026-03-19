@@ -1,7 +1,6 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
 
 interface GA4Credentials {
-  propertyId: string
   clientEmail: string
   privateKey: string
 }
@@ -15,8 +14,12 @@ export interface GA4ArticleData {
   transactions: number
 }
 
-export async function fetchBlogArticles(credentials: GA4Credentials): Promise<GA4ArticleData[]> {
-  const { propertyId, clientEmail, privateKey } = credentials
+export async function fetchBlogArticles(
+  credentials: GA4Credentials,
+  propertyId: string,
+  blogPath: string = '/blog/'
+): Promise<GA4ArticleData[]> {
+  const { clientEmail, privateKey } = credentials
 
   const client = new BetaAnalyticsDataClient({
     credentials: {
@@ -43,7 +46,7 @@ export async function fetchBlogArticles(credentials: GA4Credentials): Promise<GA
         fieldName: 'pagePath',
         stringFilter: {
           matchType: 'CONTAINS',
-          value: '/blog/',
+          value: blogPath,
         },
       },
     },

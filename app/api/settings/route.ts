@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 
 const SETTINGS_KEYS = [
-  'ga4_property_id',
   'ga4_client_email',
   'ga4_private_key',
   'wc_store_url',
   'wc_consumer_key',
   'wc_consumer_secret',
-  'blog_url_pattern',
 ]
 
 const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret']
@@ -34,7 +32,6 @@ export async function PUT(req: NextRequest) {
   for (const key of SETTINGS_KEYS) {
     if (key in body) {
       const value = body[key]
-      // Don't overwrite secrets with masked value
       if (SECRET_KEYS.includes(key) && value === '••••••••') continue
       db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?')
         .run(key, value, value)

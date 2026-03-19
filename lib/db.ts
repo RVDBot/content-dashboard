@@ -29,15 +29,39 @@ function initSchema(db: Database.Database) {
       value TEXT NOT NULL DEFAULT ''
     );
 
-    CREATE TABLE IF NOT EXISTS articles (
+    CREATE TABLE IF NOT EXISTS ga4_properties (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      url         TEXT NOT NULL UNIQUE,
-      title       TEXT,
-      pageviews   INTEGER NOT NULL DEFAULT 0,
-      sessions    INTEGER NOT NULL DEFAULT 0,
-      revenue     REAL NOT NULL DEFAULT 0,
-      transactions INTEGER NOT NULL DEFAULT 0,
-      updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      name        TEXT NOT NULL,
+      language    TEXT NOT NULL,
+      property_id TEXT NOT NULL,
+      base_url    TEXT NOT NULL DEFAULT '',
+      blog_path   TEXT NOT NULL DEFAULT '/blog/',
+      created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS articles (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      url           TEXT NOT NULL UNIQUE,
+      title         TEXT,
+      language      TEXT,
+      pageviews     INTEGER NOT NULL DEFAULT 0,
+      sessions      INTEGER NOT NULL DEFAULT 0,
+      revenue       REAL NOT NULL DEFAULT 0,
+      transactions  INTEGER NOT NULL DEFAULT 0,
+      updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `)
+
+  // Migration: add language column
+  try { db.exec(`ALTER TABLE articles ADD COLUMN language TEXT`) } catch {}
+}
+
+export interface GA4Property {
+  id: number
+  name: string
+  language: string
+  property_id: string
+  base_url: string
+  blog_path: string
+  created_at: string
 }
