@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
-      secure: process.env.NODE_ENV === 'production',
+      secure: false,
       maxAge: 60 * 60 * 24 * 30,
     })
     return res
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       httpOnly: true,
       sameSite: 'lax',
       path: '/',
-      secure: process.env.NODE_ENV === 'production',
+      secure: false,
       maxAge: 60 * 60 * 24 * 30,
     })
     return res
