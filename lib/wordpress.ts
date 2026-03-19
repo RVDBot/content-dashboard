@@ -1,44 +1,41 @@
 import { log } from './logger'
 
 /**
- * Fetch all published blog post slugs from the WordPress REST API.
- * Returns a Set of slugs that are actual blog posts (not categories, tags, etc.)
+ * Fetch all blog post slugs from the WordPress post sitemap XML.
+ * Extracts slugs from <loc> URLs in the sitemap.
  */
 export async function fetchPostSlugs(siteUrl: string): Promise<Set<string>> {
   const slugs = new Set<string>()
   const base = siteUrl.replace(/\/+$/, '')
-  let page = 1
-  const perPage = 100
+  const sitemapUrl = `${base}/post-sitemap.xml`
 
   try {
-    while (true) {
-      const url = `${base}/wp-json/wp/v2/posts?per_page=${perPage}&page=${page}&_fields=slug&status=publish`
-      const res = await fetch(url)
-
-      if (!res.ok) {
-        if (page === 1) {
-          log('warn', `WordPress REST API niet beschikbaar: ${res.status}`, { url: base })
-        }
-        break
-      }
-
-      const posts = await res.json() as { slug: string }[]
-      if (posts.length === 0) break
-
-      for (const post of posts) {
-        slugs.add(post.slug)
-      }
-
-      // Check if there are more pages
-      const totalPages = parseInt(res.headers.get('x-wp-totalpages') || '1', 10)
-      if (page >= totalPages) break
-      page++
+    const res = await fetch(sitemapUrl)
+    if (!res.ok) {
+      log('warn', `Post sitemap niet bereikbaar: ${res.status}`, { url: sitemapUrl })
+      return slugs
     }
 
-    log('info', `${slugs.size} blog post slugs opgehaald via WordPress API`, { site: base })
+    const xml = await res.text()
+
+    // Extract all <loc> URLs from sitemap
+    const locRegex = /<loc>([^<]+)<\/loc>/g
+    let match
+    while ((match = locRegex.exec(xml)) !== null) {
+      const url = match[1]
+      try {
+        const path = new URL(url).pathname
+        // Extract slug: last meaningful path segment
+        const segments = path.replace(/\/+$/, '').split('/').filter(Boolean)
+        const slug = segments[segments.length - 1]
+        if (slug) slugs.add(slug)
+      } catch { /* invalid url */ }
+    }
+
+    log('info', `${slugs.size} post slugs opgehaald uit sitemap`, { url: sitemapUrl })
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e)
-    log('warn', `WordPress API niet bereikbaar: ${errMsg}`, { site: base })
+    log('warn', `Sitemap niet bereikbaar: ${errMsg}`, { url: sitemapUrl })
   }
 
   return slugs
