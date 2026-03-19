@@ -1,0 +1,10 @@
+services:
+  content-dashboard:
+    image: ghcr.io/rvdbot/content-dashboard:latest
+    ports:
+      - "3020:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/content-dashboard.db
+    restart: unless-stopped
