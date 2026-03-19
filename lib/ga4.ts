@@ -21,11 +21,15 @@ export async function fetchBlogArticles(
 ): Promise<GA4ArticleData[]> {
   const { clientEmail, privateKey: rawKey } = credentials
 
-  // Normalize the private key: handle literal \n from JSON paste, trim whitespace
+  // Normalize the private key
+  // Handle various paste formats: literal \n, escaped \\n, missing newlines
   let privateKey = rawKey.trim()
-  if (privateKey.includes('\\n')) {
-    privateKey = privateKey.replace(/\\n/g, '\n')
-  }
+  // Replace all literal two-char \n sequences with real newlines
+  privateKey = privateKey.replace(/\\n/g, '\n')
+  // Ensure proper PEM format: headers/footers must be on their own lines
+  privateKey = privateKey
+    .replace(/-----BEGIN PRIVATE KEY-----\s*/, '-----BEGIN PRIVATE KEY-----\n')
+    .replace(/\s*-----END PRIVATE KEY-----/, '\n-----END PRIVATE KEY-----\n')
 
   const client = new BetaAnalyticsDataClient({
     credentials: {

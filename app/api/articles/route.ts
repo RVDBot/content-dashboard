@@ -74,7 +74,14 @@ export async function GET(req: NextRequest) {
   // Fetch from each property
   for (const prop of properties) {
     try {
-      log('info', `GA4 data ophalen voor ${prop.name}`, { property_id: prop.property_id, language: prop.language })
+      log('info', `GA4 data ophalen voor ${prop.name}`, {
+        property_id: prop.property_id,
+        language: prop.language,
+        key_length: credentials.privateKey.length,
+        key_starts: credentials.privateKey.substring(0, 30),
+        key_has_real_newlines: credentials.privateKey.includes('\n'),
+        key_has_literal_backslash_n: credentials.privateKey.includes('\\n'),
+      })
       const ga4Data = await fetchBlogArticles(credentials, prop.property_id, prop.blog_path)
       const baseUrl = prop.base_url.replace(/\/$/, '')
 
