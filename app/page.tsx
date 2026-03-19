@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import Settings from '@/components/Settings'
 
 interface Article {
@@ -15,14 +15,23 @@ interface Article {
   revenuePerSession: number
 }
 
+interface DailyRow {
+  url: string
+  date: string
+  pageviews: number
+  sessions: number
+  revenue: number
+  transactions: number
+}
+
 interface ArticleGroup {
   slug: string
   title: string
   languages: Record<string, Article>
   totalRevenue: number
   totalSessions: number
-  totalPageviews: number
-  totalTransactions: number
+  // daily data keyed by date, then by language
+  daily: Record<string, Record<string, { revenue: number; sessions: number }>>
 }
 
 const LANG_COLORS: Record<string, string> = {
@@ -82,19 +91,26 @@ function SettingsIcon() {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function ArticleChartTooltip({ active, payload, metric }: any) {
+function ChartTooltip({ active, payload, label, metric }: any) {
   if (!active || !payload?.length) return null
-  const d = payload[0]?.payload
-  if (!d) return null
+  // Format date label
+  const d = new Date(label + 'T00:00:00')
+  const dateStr = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
   return (
     <div className="bg-surface-1 border border-border rounded-xl px-3.5 py-2.5 shadow-lg shadow-black/8">
-      <div className="flex items-center gap-2 text-[12px]">
-        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-        <span className="text-text-secondary font-medium">{d.label}</span>
-        <span className="text-text-primary font-semibold ml-auto tabular-nums">
-          {metric === 'revenue' ? formatCurrency(d.value, 2) : formatNumber(d.value)}
-        </span>
-      </div>
+      <p className="text-text-tertiary text-[11px] font-medium mb-1.5">{dateStr}</p>
+      {payload
+        .filter((e: { value: number }) => e.value > 0)
+        .sort((a: { value: number }, b: { value: number }) => b.value - a.value)
+        .map((entry: { color: string; name: string; value: number }) => (
+          <div key={entry.name} className="flex items-center gap-2 text-[12px]">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+            <span className="text-text-tertiary">{LANG_LABELS[entry.name] || entry.name.toUpperCase()}</span>
+            <span className="text-text-primary font-semibold ml-auto tabular-nums">
+              {metric === 'revenue' ? formatCurrency(entry.value, 2) : formatNumber(entry.value)}
+            </span>
+          </div>
+        ))}
     </div>
   )
 }
@@ -104,32 +120,35 @@ function ArticleCard({
   languages,
   metric,
   rank,
+  allDates,
 }: {
   group: ArticleGroup
   languages: string[]
   metric: 'revenue' | 'sessions'
   rank: number
+  allDates: string[]
 }) {
-  const chartData = languages.map(lang => {
-    const a = group.languages[lang]
-    return {
-      lang,
-      label: LANG_LABELS[lang] || lang.toUpperCase(),
-      value: a ? (metric === 'revenue' ? a.revenue : a.sessions) : 0,
-      color: LANG_COLORS[lang] || '#94a3b8',
-      available: !!a,
-    }
-  }).filter(d => d.available)
-
-  const maxValue = Math.max(...chartData.map(d => d.value), 1)
-  const totalValue = metric === 'revenue' ? group.totalRevenue : group.totalSessions
+  const activeLangs = languages.filter(l => group.languages[l])
   const enArticle = group.languages['en']
   const enUrl = enArticle?.url
+
+  // Build chart data: one entry per date, one key per language
+  const chartData = allDates.map(date => {
+    const point: Record<string, string | number> = { date }
+    for (const lang of activeLangs) {
+      const dayData = group.daily[date]?.[lang]
+      point[lang] = dayData ? (metric === 'revenue' ? dayData.revenue : dayData.sessions) : 0
+    }
+    return point
+  })
+
+  // Check if there's any daily data at all
+  const hasDaily = chartData.some(d => activeLangs.some(l => (d[l] as number) > 0))
 
   return (
     <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 hover:border-border transition-colors duration-200 animate-row" style={{ animationDelay: `${Math.min(rank * 30, 400)}ms` }}>
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="flex items-start justify-between gap-4 mb-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5 mb-1">
             <span className="text-text-tertiary text-[11px] font-bold tabular-nums shrink-0">#{rank}</span>
@@ -147,12 +166,9 @@ function ArticleCard({
                 key={lang}
                 className={`w-2 h-2 rounded-full ${group.languages[lang] ? '' : 'opacity-15'}`}
                 style={{ backgroundColor: LANG_COLORS[lang] || '#94a3b8' }}
-                title={`${LANG_LABELS[lang] || lang.toUpperCase()}${group.languages[lang] ? '' : ' (geen data)'}`}
+                title={LANG_LABELS[lang] || lang.toUpperCase()}
               />
             ))}
-            <span className="text-text-tertiary text-[11px] ml-1.5">
-              {Object.keys(group.languages).length}/{languages.length} talen
-            </span>
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -160,53 +176,68 @@ function ArticleCard({
             {formatCurrency(group.totalRevenue)}
           </p>
           <p className="text-text-tertiary text-[11px] mt-1 tabular-nums">
-            {formatNumber(group.totalSessions)} bezoekers
+            {formatNumber(group.totalSessions)} bezoekers &middot; 365d
           </p>
         </div>
       </div>
 
-      {/* Chart */}
-      {chartData.length > 0 && (
+      {/* Line chart */}
+      {hasDaily && (
         <div className="ml-[26px]">
-          <div className="h-[${chartData.length * 36 + 8}px]" style={{ height: chartData.length * 36 + 8 }}>
+          <div className="h-[140px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                <XAxis type="number" hide domain={[0, maxValue * 1.15]} />
+              <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border-subtle)" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }}
+                  tickFormatter={v => {
+                    const d = new Date(v + 'T00:00:00')
+                    return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+                  }}
+                  axisLine={{ stroke: 'var(--color-border-subtle)' }}
+                  tickLine={false}
+                  interval={Math.floor(allDates.length / 5)}
+                />
                 <YAxis
-                  type="category"
-                  dataKey="lang"
-                  width={28}
-                  tick={{ fontSize: 11, fill: 'var(--color-text-tertiary)', fontWeight: 600 }}
-                  tickFormatter={v => v.toUpperCase()}
+                  tick={{ fontSize: 10, fill: 'var(--color-text-tertiary)' }}
                   axisLine={false}
                   tickLine={false}
+                  width={40}
+                  tickFormatter={v => metric === 'revenue' ? `€${v}` : String(v)}
                 />
-                <Tooltip content={<ArticleChartTooltip metric={metric} />} cursor={false} />
-                <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={20}>
-                  {chartData.map((d, i) => (
-                    <Cell key={i} fill={d.color} fillOpacity={0.85} />
-                  ))}
-                </Bar>
-              </BarChart>
+                <Tooltip content={<ChartTooltip metric={metric} />} />
+                {activeLangs.map(lang => (
+                  <Line
+                    key={lang}
+                    type="monotone"
+                    dataKey={lang}
+                    stroke={LANG_COLORS[lang] || '#94a3b8'}
+                    strokeWidth={1.5}
+                    dot={false}
+                    activeDot={{ r: 3, strokeWidth: 2, stroke: '#fff' }}
+                  />
+                ))}
+              </LineChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Values next to bars */}
+          {/* Per-language totals (30 day) */}
           <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
-            {chartData.map(d => (
-              <div key={d.lang} className="flex items-center gap-1.5 text-[11px]">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: d.color }} />
-                <span className="text-text-tertiary">{d.label}</span>
-                <span className="text-text-secondary font-semibold tabular-nums">
-                  {metric === 'revenue' ? formatCurrency(d.value, 2) : formatNumber(d.value)}
-                </span>
-                {totalValue > 0 && (
-                  <span className="text-text-tertiary tabular-nums">
-                    ({((d.value / totalValue) * 100).toFixed(0)}%)
+            {activeLangs.map(lang => {
+              const a = group.languages[lang]
+              if (!a) return null
+              return (
+                <div key={lang} className="flex items-center gap-1.5 text-[11px]">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: LANG_COLORS[lang] || '#94a3b8' }} />
+                  <span className="text-text-tertiary">{LANG_LABELS[lang] || lang.toUpperCase()}</span>
+                  <span className="text-text-secondary font-semibold tabular-nums">
+                    {metric === 'revenue' ? formatCurrency(a.revenue, 2) : formatNumber(a.sessions)}
                   </span>
-                )}
-              </div>
-            ))}
+                  <span className="text-text-tertiary">(365d)</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
@@ -216,13 +247,13 @@ function ArticleCard({
 
 export default function Home() {
   const [articles, setArticles] = useState<Article[]>([])
+  const [daily, setDaily] = useState<DailyRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [cached, setCached] = useState(false)
   const [metric, setMetric] = useState<'revenue' | 'sessions'>('revenue')
-  const [sortBy, setSortBy] = useState<'revenue' | 'sessions'>('revenue')
 
   function loadArticles(refresh = false) {
     const url = refresh ? '/api/articles?refresh=1' : '/api/articles'
@@ -242,6 +273,7 @@ export default function Home() {
           setError(data.error)
         } else {
           setArticles(data.articles || [])
+          setDaily(data.daily || [])
           setCached(!!data.cached)
         }
       })
@@ -251,25 +283,45 @@ export default function Home() {
 
   useEffect(() => { loadArticles() }, [])
 
-  // Group articles by slug
+  // Build URL → language lookup
+  const urlToLang = useMemo(() => {
+    const map = new Map<string, string>()
+    articles.forEach(a => { if (a.language) map.set(a.url, a.language) })
+    return map
+  }, [articles])
+
+  // Group articles by slug, including daily data
   const groups = useMemo<ArticleGroup[]>(() => {
     const map = new Map<string, ArticleGroup>()
+
     for (const a of articles) {
       const slug = extractSlug(a.url)
       let group = map.get(slug)
       if (!group) {
-        group = { slug, title: '', languages: {}, totalRevenue: 0, totalSessions: 0, totalPageviews: 0, totalTransactions: 0 }
+        group = { slug, title: '', languages: {}, totalRevenue: 0, totalSessions: 0, daily: {} }
         map.set(slug, group)
       }
       if (a.language) group.languages[a.language] = a
       group.totalRevenue += a.revenue
       group.totalSessions += a.sessions
-      group.totalPageviews += a.pageviews
-      group.totalTransactions += a.transactions
       if (a.language === 'en' || !group.title) group.title = a.title || slug
     }
+
+    // Map daily data to groups
+    for (const d of daily) {
+      const slug = extractSlug(d.url)
+      const group = map.get(slug)
+      if (!group) continue
+      const lang = urlToLang.get(d.url)
+      if (!lang) continue
+      if (!group.daily[d.date]) group.daily[d.date] = {}
+      if (!group.daily[d.date][lang]) group.daily[d.date][lang] = { revenue: 0, sessions: 0 }
+      group.daily[d.date][lang].revenue += d.revenue
+      group.daily[d.date][lang].sessions += d.sessions
+    }
+
     return [...map.values()]
-  }, [articles])
+  }, [articles, daily, urlToLang])
 
   const languages = useMemo(() => {
     const langs = new Set<string>()
@@ -281,13 +333,19 @@ export default function Home() {
     })
   }, [articles])
 
+  // All unique dates sorted
+  const allDates = useMemo(() => {
+    const dates = new Set<string>()
+    daily.forEach(d => dates.add(d.date))
+    return [...dates].sort()
+  }, [daily])
+
   const sortedGroups = useMemo(() => {
     return [...groups].sort((a, b) =>
-      sortBy === 'revenue' ? b.totalRevenue - a.totalRevenue : b.totalSessions - a.totalSessions
+      metric === 'revenue' ? b.totalRevenue - a.totalRevenue : b.totalSessions - a.totalSessions
     )
-  }, [groups, sortBy])
+  }, [groups, metric])
 
-  // Totals per language
   const langTotals = useMemo(() => {
     const totals: Record<string, { revenue: number; sessions: number }> = {}
     for (const a of articles) {
@@ -337,7 +395,7 @@ export default function Home() {
                   <div className="skeleton h-5 w-60" />
                   <div className="skeleton h-6 w-20" />
                 </div>
-                <div className="skeleton h-24 w-full rounded-xl" />
+                <div className="skeleton h-[140px] w-full rounded-xl" />
               </div>
             ))}
           </div>
@@ -358,7 +416,6 @@ export default function Home() {
             {/* Summary bar */}
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mb-4">
               <div className="flex flex-wrap items-center justify-between gap-4">
-                {/* Totals */}
                 <div className="flex items-center gap-8">
                   <div>
                     <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Totale omzet</p>
@@ -379,8 +436,6 @@ export default function Home() {
                     </p>
                   </div>
                 </div>
-
-                {/* Language chips */}
                 <div className="flex flex-wrap items-center gap-2">
                   {languages.map(lang => {
                     const t = langTotals[lang]
@@ -400,7 +455,7 @@ export default function Home() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex bg-surface-1 rounded-lg p-0.5 border border-border-subtle">
                 <button
-                  onClick={() => { setMetric('revenue'); setSortBy('revenue') }}
+                  onClick={() => setMetric('revenue')}
                   className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-all duration-150 ${
                     metric === 'revenue' ? 'bg-surface-3 text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
                   }`}
@@ -408,7 +463,7 @@ export default function Home() {
                   Omzet
                 </button>
                 <button
-                  onClick={() => { setMetric('sessions'); setSortBy('sessions') }}
+                  onClick={() => setMetric('sessions')}
                   className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-all duration-150 ${
                     metric === 'sessions' ? 'bg-surface-3 text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
                   }`}
@@ -417,14 +472,14 @@ export default function Home() {
                 </button>
               </div>
               <span className="text-text-tertiary text-[11px]">
-                Gesorteerd op {metric === 'revenue' ? 'omzet' : 'bezoekers'} &middot; Engelse titel als referentie
+                Grafiek: 30 dagen &middot; Totalen: 365 dagen &middot; Engelse titel
               </span>
             </div>
 
             {/* Article cards */}
             <div className="space-y-3">
               {sortedGroups.map((g, i) => (
-                <ArticleCard key={g.slug} group={g} languages={languages} metric={metric} rank={i + 1} />
+                <ArticleCard key={g.slug} group={g} languages={languages} metric={metric} rank={i + 1} allDates={allDates} />
               ))}
             </div>
           </>

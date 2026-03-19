@@ -51,6 +51,16 @@ function initSchema(db: Database.Database) {
       updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS article_daily (
+      url         TEXT NOT NULL,
+      date        TEXT NOT NULL,
+      pageviews   INTEGER NOT NULL DEFAULT 0,
+      sessions    INTEGER NOT NULL DEFAULT 0,
+      revenue     REAL NOT NULL DEFAULT 0,
+      transactions INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (url, date)
+    );
+
     CREATE TABLE IF NOT EXISTS logs (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       level      TEXT NOT NULL DEFAULT 'info',

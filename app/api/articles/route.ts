@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb, GA4Property } from '@/lib/db'
-import { fetchBlogArticles } from '@/lib/ga4'
+import { fetchBlogArticles, fetchBlogArticlesDaily } from '@/lib/ga4'
 import { log } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth-guard'
 
@@ -25,11 +25,15 @@ export async function GET(req: NextRequest) {
       url: string; title: string; language: string | null; pageviews: number; sessions: number; revenue: number; transactions: number
     }[]
     if (cached.length > 0) {
+      const daily = db.prepare('SELECT * FROM article_daily ORDER BY date ASC').all() as {
+        url: string; date: string; pageviews: number; sessions: number; revenue: number; transactions: number
+      }[]
       return NextResponse.json({
         articles: cached.map(a => ({
           ...a,
           revenuePerSession: a.sessions > 0 ? a.revenue / a.sessions : 0,
         })),
+        daily,
         cached: true,
       })
     }
@@ -42,6 +46,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       error: 'GA4 service account niet geconfigureerd. Ga naar Instellingen.',
       articles: [],
+      daily: [],
     })
   }
 
@@ -52,13 +57,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       error: 'Geen GA4 properties geconfigureerd. Voeg properties toe in Instellingen.',
       articles: [],
+      daily: [],
     })
   }
 
   const errors: string[] = []
 
-  // Upsert statement
-  const upsert = db.prepare(`
+  const upsertArticle = db.prepare(`
     INSERT INTO articles (url, title, language, pageviews, sessions, revenue, transactions, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(url) DO UPDATE SET
@@ -71,25 +76,39 @@ export async function GET(req: NextRequest) {
       updated_at = CURRENT_TIMESTAMP
   `)
 
-  // Fetch from each property
+  const upsertDaily = db.prepare(`
+    INSERT INTO article_daily (url, date, pageviews, sessions, revenue, transactions)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(url, date) DO UPDATE SET
+      pageviews = excluded.pageviews,
+      sessions = excluded.sessions,
+      revenue = excluded.revenue,
+      transactions = excluded.transactions
+  `)
+
+  // Clear old daily data on refresh
+  db.prepare('DELETE FROM article_daily').run()
+
   for (const prop of properties) {
     try {
-      log('info', `GA4 data ophalen voor ${prop.name}`, {
-        property_id: prop.property_id,
-        language: prop.language,
-        key_length: credentials.privateKey.length,
-        key_starts: credentials.privateKey.substring(0, 30),
-        key_has_real_newlines: credentials.privateKey.includes('\n'),
-        key_has_literal_backslash_n: credentials.privateKey.includes('\\n'),
-      })
-      const ga4Data = await fetchBlogArticles(credentials, prop.property_id, prop.blog_path)
+      log('info', `GA4 data ophalen voor ${prop.name}`, { property_id: prop.property_id, language: prop.language })
       const baseUrl = prop.base_url.replace(/\/$/, '')
 
+      // Fetch aggregate (365 days)
+      const ga4Data = await fetchBlogArticles(credentials, prop.property_id, prop.blog_path)
       for (const row of ga4Data) {
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
-        upsert.run(fullUrl, row.pageTitle, prop.language, row.pageviews, row.sessions, row.revenue, row.transactions)
+        upsertArticle.run(fullUrl, row.pageTitle, prop.language, row.pageviews, row.sessions, row.revenue, row.transactions)
       }
-      log('info', `${ga4Data.length} artikelen opgehaald voor ${prop.name}`, { language: prop.language })
+
+      // Fetch daily (30 days)
+      const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id, prop.blog_path)
+      for (const row of dailyData) {
+        const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
+        upsertDaily.run(fullUrl, row.date, row.pageviews, row.sessions, row.revenue, row.transactions)
+      }
+
+      log('info', `${ga4Data.length} artikelen + ${dailyData.length} dagelijkse rijen voor ${prop.name}`)
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
       errors.push(`${prop.name}: ${errMsg}`)
@@ -101,13 +120,18 @@ export async function GET(req: NextRequest) {
     url: string; title: string; language: string | null; pageviews: number; sessions: number; revenue: number; transactions: number
   }[]
 
-  log('info', `Data vernieuwd: ${articles.length} artikelen`, { errors: errors.length || undefined })
+  const daily = db.prepare('SELECT * FROM article_daily ORDER BY date ASC').all() as {
+    url: string; date: string; pageviews: number; sessions: number; revenue: number; transactions: number
+  }[]
+
+  log('info', `Data vernieuwd: ${articles.length} artikelen, ${daily.length} dagelijkse rijen`, { errors: errors.length || undefined })
 
   return NextResponse.json({
     articles: articles.map(a => ({
       ...a,
       revenuePerSession: a.sessions > 0 ? a.revenue / a.sessions : 0,
     })),
+    daily,
     cached: false,
     ...(errors.length > 0 ? { errors } : {}),
   })
