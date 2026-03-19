@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Settings from '@/components/Settings'
 
 interface Article {
   url: string
@@ -18,20 +19,30 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null)
   const [sortBy, setSortBy] = useState<keyof Article>('revenue')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [showSettings, setShowSettings] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [cached, setCached] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/articles')
+  function loadArticles(refresh = false) {
+    const url = refresh ? '/api/articles?refresh=1' : '/api/articles'
+    if (refresh) setRefreshing(true)
+    else setLoading(true)
+    setError(null)
+    fetch(url)
       .then(r => r.json())
       .then(data => {
         if (data.error) {
           setError(data.error)
         } else {
           setArticles(data.articles || [])
+          setCached(!!data.cached)
         }
       })
       .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
-  }, [])
+      .finally(() => { setLoading(false); setRefreshing(false) })
+  }
+
+  useEffect(() => { loadArticles() }, [])
 
   function toggleSort(col: keyof Article) {
     if (sortBy === col) {
@@ -58,7 +69,27 @@ export default function Home() {
 
   return (
     <div className="min-h-screen p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Content Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Content Dashboard</h1>
+        <div className="flex items-center gap-3">
+          {cached && (
+            <span className="text-gray-500 text-xs">Uit cache</span>
+          )}
+          <button
+            onClick={() => loadArticles(true)}
+            disabled={refreshing}
+            className="text-sm text-gray-400 hover:text-gray-200 disabled:opacity-50 transition-colors"
+          >
+            {refreshing ? 'Vernieuwen...' : 'Vernieuwen'}
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="text-sm bg-gray-800 text-gray-300 hover:text-gray-100 px-3 py-1.5 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
+          >
+            Instellingen
+          </button>
+        </div>
+      </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
@@ -80,7 +111,7 @@ export default function Home() {
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-6">
           <p className="text-red-400 text-sm">{error}</p>
-          <p className="text-gray-400 text-xs mt-1">Controleer de instellingen via /api/settings</p>
+          <button onClick={() => setShowSettings(true)} className="text-emerald-400 text-xs mt-1 hover:underline">Instellingen openen</button>
         </div>
       )}
 
@@ -133,6 +164,7 @@ export default function Home() {
           </div>
         </div>
       )}
+      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
     </div>
   )
 }
