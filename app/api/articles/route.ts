@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb, GA4Property } from '@/lib/db'
 import { fetchBlogArticles } from '@/lib/ga4'
+import { log } from '@/lib/logger'
 
 function getCredentials() {
   const db = getDb()
@@ -35,6 +36,7 @@ export async function GET(req: NextRequest) {
   // Check credentials
   const credentials = getCredentials()
   if (!credentials.clientEmail || !credentials.privateKey) {
+    log('warn', 'GA4 service account niet geconfigureerd')
     return NextResponse.json({
       error: 'GA4 service account niet geconfigureerd. Ga naar Instellingen.',
       articles: [],
@@ -44,6 +46,7 @@ export async function GET(req: NextRequest) {
   // Get all properties
   const properties = db.prepare('SELECT * FROM ga4_properties').all() as GA4Property[]
   if (properties.length === 0) {
+    log('warn', 'Geen GA4 properties geconfigureerd')
     return NextResponse.json({
       error: 'Geen GA4 properties geconfigureerd. Voeg properties toe in Instellingen.',
       articles: [],
@@ -69,6 +72,7 @@ export async function GET(req: NextRequest) {
   // Fetch from each property
   for (const prop of properties) {
     try {
+      log('info', `GA4 data ophalen voor ${prop.name}`, { property_id: prop.property_id, language: prop.language })
       const ga4Data = await fetchBlogArticles(credentials, prop.property_id, prop.blog_path)
       const baseUrl = prop.base_url.replace(/\/$/, '')
 
@@ -76,14 +80,19 @@ export async function GET(req: NextRequest) {
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
         upsert.run(fullUrl, row.pageTitle, prop.language, row.pageviews, row.sessions, row.revenue, row.transactions)
       }
+      log('info', `${ga4Data.length} artikelen opgehaald voor ${prop.name}`, { language: prop.language })
     } catch (e) {
-      errors.push(`${prop.name}: ${e instanceof Error ? e.message : String(e)}`)
+      const errMsg = e instanceof Error ? e.message : String(e)
+      errors.push(`${prop.name}: ${errMsg}`)
+      log('error', `GA4 ophalen mislukt voor ${prop.name}`, { error: errMsg, property_id: prop.property_id })
     }
   }
 
   const articles = db.prepare('SELECT * FROM articles ORDER BY revenue DESC').all() as {
     url: string; title: string; language: string | null; pageviews: number; sessions: number; revenue: number; transactions: number
   }[]
+
+  log('info', `Data vernieuwd: ${articles.length} artikelen`, { errors: errors.length || undefined })
 
   return NextResponse.json({
     articles: articles.map(a => ({

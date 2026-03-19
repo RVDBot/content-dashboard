@@ -50,6 +50,14 @@ function initSchema(db: Database.Database) {
       transactions  INTEGER NOT NULL DEFAULT 0,
       updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS logs (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      level      TEXT NOT NULL DEFAULT 'info',
+      message    TEXT NOT NULL,
+      meta       TEXT,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
   `)
 
   // Migration: add language column

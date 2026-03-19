@@ -86,7 +86,9 @@ export default function Settings({ onClose }: Props) {
   const [saved, setSaved] = useState(false)
   const [showKey, setShowKey] = useState(false)
   const [showWcSecret, setShowWcSecret] = useState(false)
-  const [activeTab, setActiveTab] = useState<'ga4' | 'woocommerce'>('ga4')
+  const [activeTab, setActiveTab] = useState<'ga4' | 'woocommerce' | 'logs'>('ga4')
+  const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
+  const [logsLoading, setLogsLoading] = useState(false)
 
   const emptyProp: GA4PropertyForm = {
     name: '', language: 'nl', property_id: '', base_url: '', blog_path: '/blog/',
@@ -132,6 +134,22 @@ export default function Settings({ onClose }: Props) {
     setEditingProp(null)
   }
 
+  async function fetchLogs() {
+    setLogsLoading(true)
+    try {
+      const res = await fetch('/api/logs')
+      if (res.ok) setLogs(await res.json())
+    } finally {
+      setLogsLoading(false)
+    }
+  }
+
+  async function clearLogs() {
+    if (!confirm('Alle logs verwijderen?')) return
+    await fetch('/api/logs', { method: 'DELETE' })
+    setLogs([])
+  }
+
   async function deleteProp(id: number, name: string) {
     if (!confirm(`Property "${name}" verwijderen?`)) return
     await fetch('/api/properties', {
@@ -169,10 +187,11 @@ export default function Settings({ onClose }: Props) {
               {[
                 { id: 'ga4' as const, label: 'Analytics' },
                 { id: 'woocommerce' as const, label: 'WooCommerce' },
+                { id: 'logs' as const, label: 'Logboek' },
               ].map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => { setActiveTab(tab.id); if (tab.id === 'logs' && logs.length === 0) fetchLogs() }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 ${
                     activeTab === tab.id
                       ? 'text-text-primary bg-surface-3'
@@ -353,6 +372,71 @@ export default function Settings({ onClose }: Props) {
                     onToggle={() => setShowWcSecret(!showWcSecret)}
                     placeholder="cs_..."
                   />
+                </>
+              )}
+
+              {activeTab === 'logs' && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-text-primary text-[13px] font-semibold mb-1">Activiteitenlog</h3>
+                      <p className="text-text-tertiary text-[11px] leading-relaxed">
+                        Recente API-activiteit en foutmeldingen.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={fetchLogs}
+                        className="text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors"
+                      >
+                        Vernieuwen
+                      </button>
+                      {logs.length > 0 && (
+                        <button
+                          onClick={clearLogs}
+                          className="text-[11px] font-semibold text-text-tertiary hover:text-danger transition-colors"
+                        >
+                          Wissen
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {logsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : logs.length === 0 ? (
+                    <div className="bg-surface-0 rounded-xl p-5 text-center border border-border-subtle">
+                      <p className="text-text-tertiary text-[13px]">Geen logs beschikbaar</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+                      {logs.map(log => (
+                        <div key={log.id} className="bg-surface-0 rounded-xl px-3.5 py-2.5 border border-border-subtle">
+                          <div className="flex items-start gap-2">
+                            <span className={`shrink-0 mt-0.5 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md ${
+                              log.level === 'error' ? 'bg-danger-subtle text-danger' :
+                              log.level === 'warn' ? 'bg-warning-subtle text-warning' :
+                              'bg-surface-3 text-text-tertiary'
+                            }`}>
+                              {log.level}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-text-primary text-[13px] leading-snug">{log.message}</p>
+                              {log.meta && (
+                                <p className="text-text-tertiary text-[11px] mt-1 font-mono truncate">
+                                  {log.meta}
+                                </p>
+                              )}
+                            </div>
+                            <span className="shrink-0 text-text-tertiary text-[11px] tabular-nums">
+                              {new Date(log.created_at).toLocaleString('nl-NL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
             </div>

@@ -72,7 +72,13 @@ export default function Home() {
     else setLoading(true)
     setError(null)
     fetch(url)
-      .then(r => r.json())
+      .then(async r => {
+        if (!r.ok) {
+          const text = await r.text()
+          throw new Error(`Server fout (${r.status}): ${text.slice(0, 200)}`)
+        }
+        return r.json()
+      })
       .then(data => {
         if (data.error) {
           setError(data.error)
