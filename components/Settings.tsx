@@ -14,7 +14,7 @@ function Field({ label, id, value, onChange, show, onToggle, placeholder, multil
 }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="text-gray-400 text-xs font-medium">{label}</label>
+      <label htmlFor={id} className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider">{label}</label>
       <div className="relative">
         {multiline ? (
           <textarea
@@ -23,7 +23,7 @@ function Field({ label, id, value, onChange, show, onToggle, placeholder, multil
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
             rows={3}
-            className="w-full bg-gray-800 text-gray-100 text-sm px-3 py-2 rounded-lg outline-none border border-gray-700 focus:border-emerald-500 placeholder:text-gray-500 resize-none font-mono"
+            className="w-full bg-surface-0 text-text-primary text-[13px] px-3 py-2.5 rounded-xl outline-none border border-border hover:border-text-tertiary focus:border-accent placeholder:text-text-tertiary resize-none font-mono transition-colors duration-150"
           />
         ) : (
           <input
@@ -32,14 +32,14 @@ function Field({ label, id, value, onChange, show, onToggle, placeholder, multil
             value={value}
             onChange={e => onChange(e.target.value)}
             placeholder={placeholder}
-            className="w-full bg-gray-800 text-gray-100 text-sm px-3 py-2 rounded-lg outline-none border border-gray-700 focus:border-emerald-500 placeholder:text-gray-500 pr-10"
+            className="w-full bg-surface-0 text-text-primary text-[13px] px-3 py-2.5 rounded-xl outline-none border border-border hover:border-text-tertiary focus:border-accent placeholder:text-text-tertiary pr-14 transition-colors duration-150"
           />
         )}
         {onToggle && !multiline && (
           <button
             type="button"
             onClick={onToggle}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 text-xs"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-text-tertiary hover:text-text-secondary text-[11px] font-medium transition-colors"
           >
             {show ? 'Verberg' : 'Toon'}
           </button>
@@ -143,49 +143,57 @@ export default function Settings({ onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-gray-900 border border-gray-800 rounded-xl w-full max-w-[580px] max-h-[85vh] mx-4 flex flex-col shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-surface-1 border border-border rounded-2xl w-full max-w-[600px] max-h-[85vh] mx-4 flex flex-col shadow-2xl shadow-black/40">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-          <h2 className="text-gray-100 font-semibold">Instellingen</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-200 text-xl leading-none">&times;</button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border-subtle">
+          <h2 className="text-text-primary text-[15px] font-semibold">Instellingen</h2>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-text-tertiary hover:text-text-secondary hover:bg-surface-3 transition-all duration-150"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
         </div>
 
         {loading ? (
           <div className="flex-1 flex items-center justify-center py-20">
-            <p className="text-gray-400 text-sm">Laden...</p>
+            <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           </div>
         ) : (
           <div className="flex-1 flex min-h-0">
             {/* Tabs */}
-            <div className="w-[140px] shrink-0 border-r border-gray-800 py-2">
-              <button
-                onClick={() => setActiveTab('ga4')}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeTab === 'ga4' ? 'text-emerald-400 bg-emerald-400/10 border-r-2 border-emerald-400' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                }`}
-              >
-                Google Analytics
-              </button>
-              <button
-                onClick={() => setActiveTab('woocommerce')}
-                className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
-                  activeTab === 'woocommerce' ? 'text-emerald-400 bg-emerald-400/10 border-r-2 border-emerald-400' : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                }`}
-              >
-                WooCommerce
-              </button>
+            <div className="w-[150px] shrink-0 border-r border-border-subtle p-2">
+              {[
+                { id: 'ga4' as const, label: 'Analytics' },
+                { id: 'woocommerce' as const, label: 'WooCommerce' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`w-full text-left px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 ${
+                    activeTab === tab.id
+                      ? 'text-text-primary bg-surface-3'
+                      : 'text-text-tertiary hover:text-text-secondary hover:bg-surface-2'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
               {activeTab === 'ga4' && (
                 <>
-                  {/* Service account credentials (shared) */}
-                  <h3 className="text-gray-100 font-medium text-sm">Service Account</h3>
-                  <p className="text-gray-500 text-xs">
-                    Eén service account voor alle GA4 properties. Voeg het toe als Viewer in elke GA4 property.
-                  </p>
+                  <div>
+                    <h3 className="text-text-primary text-[13px] font-semibold mb-1">Service Account</h3>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed">
+                      Eén service account voor alle GA4 properties. Voeg het toe als Viewer in elke GA4 property.
+                    </p>
+                  </div>
                   <Field
                     label="Service Account Email"
                     id="ga4_client_email"
@@ -204,109 +212,124 @@ export default function Settings({ onClose }: Props) {
                     multiline
                   />
 
-                  <hr className="border-gray-800" />
-
-                  {/* Properties list */}
-                  {editingProp ? (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setEditingProp(null)} className="text-gray-400 hover:text-gray-200 text-sm">&larr;</button>
-                        <h3 className="text-gray-100 font-medium text-sm">
-                          {editingProp.id ? 'Property bewerken' : 'Nieuwe property'}
-                        </h3>
-                      </div>
-                      <Field label="Naam" id="prop_name" value={editingProp.name} onChange={v => setEditingProp(p => p && ({ ...p, name: v }))} placeholder="Bijv. SpeedRope NL" />
-                      <div className="space-y-1.5">
-                        <label className="text-gray-400 text-xs font-medium">Taal</label>
-                        <select
-                          value={editingProp.language}
-                          onChange={e => setEditingProp(p => p && ({ ...p, language: e.target.value }))}
-                          className="w-full bg-gray-800 text-gray-100 text-sm px-3 py-2 rounded-lg outline-none border border-gray-700 focus:border-emerald-500"
-                        >
-                          {LANGUAGES.map(l => (
-                            <option key={l.code} value={l.code}>{l.label}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <Field label="GA4 Property ID" id="prop_id" value={editingProp.property_id} onChange={v => setEditingProp(p => p && ({ ...p, property_id: v }))} placeholder="123456789" />
-                      <Field label="Base URL" id="prop_base_url" value={editingProp.base_url} onChange={v => setEditingProp(p => p && ({ ...p, base_url: v }))} placeholder="https://speedropeshop.com" />
-                      <Field label="Blog pad" id="prop_blog_path" value={editingProp.blog_path} onChange={v => setEditingProp(p => p && ({ ...p, blog_path: v }))} placeholder="/blog/" />
-                      <div className="flex gap-2 pt-1">
-                        <button
-                          onClick={saveProp}
-                          className="bg-emerald-500 text-white text-sm px-4 py-2 rounded-lg hover:bg-emerald-600 transition-colors"
-                        >
-                          {editingProp.id ? 'Bijwerken' : 'Toevoegen'}
-                        </button>
-                        <button
-                          onClick={() => setEditingProp(null)}
-                          className="text-sm text-gray-400 hover:text-gray-200 px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-                        >
-                          Annuleren
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-gray-100 font-medium text-sm">GA4 Properties</h3>
-                        <button
-                          onClick={() => setEditingProp({ ...emptyProp })}
-                          className="text-xs text-emerald-400 hover:underline"
-                        >
-                          + Property toevoegen
-                        </button>
-                      </div>
-                      {properties.length === 0 ? (
-                        <div className="bg-gray-800 rounded-lg p-4 text-center">
-                          <p className="text-gray-400 text-sm">Geen properties geconfigureerd</p>
+                  <div className="border-t border-border-subtle pt-5">
+                    {editingProp ? (
+                      <>
+                        <div className="flex items-center gap-2 mb-4">
+                          <button
+                            onClick={() => setEditingProp(null)}
+                            className="w-6 h-6 rounded-lg flex items-center justify-center text-text-tertiary hover:text-text-secondary hover:bg-surface-3 transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                              <path d="M8 1L3 6l5 5" />
+                            </svg>
+                          </button>
+                          <h3 className="text-text-primary text-[13px] font-semibold">
+                            {editingProp.id ? 'Property bewerken' : 'Nieuwe property'}
+                          </h3>
+                        </div>
+                        <div className="space-y-4">
+                          <Field label="Naam" id="prop_name" value={editingProp.name} onChange={v => setEditingProp(p => p && ({ ...p, name: v }))} placeholder="Bijv. SpeedRope NL" />
+                          <div className="space-y-1.5">
+                            <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider">Taal</label>
+                            <select
+                              value={editingProp.language}
+                              onChange={e => setEditingProp(p => p && ({ ...p, language: e.target.value }))}
+                              className="w-full bg-surface-0 text-text-primary text-[13px] px-3 py-2.5 rounded-xl outline-none border border-border hover:border-text-tertiary focus:border-accent transition-colors duration-150 cursor-pointer"
+                            >
+                              {LANGUAGES.map(l => (
+                                <option key={l.code} value={l.code}>{l.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <Field label="GA4 Property ID" id="prop_id" value={editingProp.property_id} onChange={v => setEditingProp(p => p && ({ ...p, property_id: v }))} placeholder="123456789" />
+                          <Field label="Base URL" id="prop_base_url" value={editingProp.base_url} onChange={v => setEditingProp(p => p && ({ ...p, base_url: v }))} placeholder="https://speedropeshop.com" />
+                          <Field label="Blog pad" id="prop_blog_path" value={editingProp.blog_path} onChange={v => setEditingProp(p => p && ({ ...p, blog_path: v }))} placeholder="/blog/" />
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={saveProp}
+                              className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-xl transition-colors duration-150"
+                            >
+                              {editingProp.id ? 'Bijwerken' : 'Toevoegen'}
+                            </button>
+                            <button
+                              onClick={() => setEditingProp(null)}
+                              className="text-[13px] text-text-tertiary hover:text-text-secondary px-4 py-2 rounded-xl hover:bg-surface-3 transition-colors duration-150"
+                            >
+                              Annuleren
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-text-primary text-[13px] font-semibold">GA4 Properties</h3>
                           <button
                             onClick={() => setEditingProp({ ...emptyProp })}
-                            className="mt-2 text-xs text-emerald-400 hover:underline"
+                            className="text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors"
                           >
-                            Voeg je eerste property toe
+                            + Toevoegen
                           </button>
                         </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {properties.map(prop => (
-                            <div key={prop.id} className="bg-gray-800 rounded-lg p-3">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <span className="text-gray-100 text-sm font-medium">{prop.name}</span>
-                                  <span className="ml-2 text-gray-500 text-xs">{prop.language.toUpperCase()}</span>
+                        {properties.length === 0 ? (
+                          <div className="bg-surface-0 rounded-xl p-5 text-center border border-border-subtle">
+                            <p className="text-text-tertiary text-[13px]">Geen properties geconfigureerd</p>
+                            <button
+                              onClick={() => setEditingProp({ ...emptyProp })}
+                              className="mt-2 text-[11px] text-accent font-semibold hover:text-accent-hover transition-colors"
+                            >
+                              Voeg je eerste property toe
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {properties.map(prop => (
+                              <div key={prop.id} className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle hover:border-border transition-colors duration-150 group">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2.5">
+                                    <span className="text-[11px] font-semibold text-text-tertiary bg-surface-3 px-2 py-0.5 rounded-md">
+                                      {prop.language.toUpperCase()}
+                                    </span>
+                                    <span className="text-text-primary text-[13px] font-medium">{prop.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                                    <button
+                                      onClick={() => setEditingProp({ ...prop })}
+                                      className="text-text-tertiary hover:text-text-secondary text-[11px] font-medium px-2 py-1 rounded-lg hover:bg-surface-3 transition-colors"
+                                    >
+                                      Bewerk
+                                    </button>
+                                    <button
+                                      onClick={() => deleteProp(prop.id, prop.name)}
+                                      className="text-text-tertiary hover:text-danger text-[11px] font-medium px-2 py-1 rounded-lg hover:bg-danger-subtle transition-colors"
+                                    >
+                                      Verwijder
+                                    </button>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    onClick={() => setEditingProp({ ...prop })}
-                                    className="text-gray-400 hover:text-gray-200 text-xs px-2 py-1"
-                                  >
-                                    Bewerken
-                                  </button>
-                                  <button
-                                    onClick={() => deleteProp(prop.id, prop.name)}
-                                    className="text-gray-400 hover:text-red-400 text-xs px-2 py-1"
-                                  >
-                                    Verwijder
-                                  </button>
-                                </div>
+                                <p className="text-text-tertiary text-[11px] mt-1 ml-[38px]">
+                                  ID: {prop.property_id}
+                                  {prop.base_url && <> &middot; {prop.base_url}</>}
+                                </p>
                               </div>
-                              <p className="text-gray-500 text-xs mt-0.5">Property: {prop.property_id} &middot; {prop.base_url || '(geen URL)'}</p>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </>
-                  )}
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </>
               )}
 
               {activeTab === 'woocommerce' && (
                 <>
-                  <h3 className="text-gray-100 font-medium text-sm">WooCommerce REST API</h3>
-                  <p className="text-gray-500 text-xs">
-                    Zelfde credentials als je webshop. Genereer keys via WooCommerce &gt; Instellingen &gt; Geavanceerd &gt; REST API.
-                  </p>
+                  <div>
+                    <h3 className="text-text-primary text-[13px] font-semibold mb-1">WooCommerce REST API</h3>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed">
+                      Genereer keys via WooCommerce &gt; Instellingen &gt; Geavanceerd &gt; REST API.
+                    </p>
+                  </div>
                   <Field
                     label="Winkel URL"
                     id="wc_store_url"
@@ -337,13 +360,17 @@ export default function Settings({ onClose }: Props) {
         )}
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-800 flex justify-end">
+        <div className="px-6 py-4 border-t border-border-subtle flex justify-end">
           <button
             onClick={save}
             disabled={saving}
-            className="flex items-center gap-2 bg-emerald-500 disabled:opacity-50 text-white text-sm font-medium px-5 py-2 rounded-lg hover:bg-emerald-600 transition-colors"
+            className={`text-[13px] font-semibold px-5 py-2 rounded-xl transition-all duration-150 ${
+              saved
+                ? 'bg-success/15 text-success'
+                : 'bg-accent hover:bg-accent-hover text-white disabled:opacity-50'
+            }`}
           >
-            {saving ? 'Opslaan...' : saved ? '✓ Opgeslagen' : 'Opslaan'}
+            {saving ? 'Opslaan...' : saved ? 'Opgeslagen' : 'Opslaan'}
           </button>
         </div>
       </div>
