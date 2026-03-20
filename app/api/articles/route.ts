@@ -169,14 +169,20 @@ export async function GET(req: NextRequest) {
 
       // Fetch daily (30 days)
       const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id)
+      let dailyIncluded = 0
+      let dailySkipped = 0
       for (const row of dailyData) {
-        if (validPaths.size > 0 && !validPaths.has(row.pagePath)) continue
+        if (validPaths.size > 0 && !validPaths.has(row.pagePath)) {
+          dailySkipped++
+          continue
+        }
         const baseUrl = prop.base_url.replace(/\/$/, '')
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
         upsertDaily.run(fullUrl, row.date, row.pageviews, row.sessions, row.revenue, row.transactions)
+        dailyIncluded++
       }
 
-      log('info', `${included} artikelen (${skipped} gefilterd) + dagelijkse data voor ${prop.name}`)
+      log('info', `${prop.name}: ${included} artikelen (${skipped} gefilterd), ${dailyIncluded} dagelijkse rijen (${dailySkipped} gefilterd) van ${dailyData.length} totaal`)
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
       errors.push(`${prop.name}: ${errMsg}`)
