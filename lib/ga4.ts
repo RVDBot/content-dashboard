@@ -1,4 +1,5 @@
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
+import { log } from '@/lib/logger'
 
 interface GA4Credentials {
   clientEmail: string
@@ -133,9 +134,11 @@ export async function fetchBlogArticles(
   ])
 
   // Build revenue map from landingPage (organic sessions starting on this page)
+  // Strip query strings from landingPage — GA4 may include ?gclid= etc.
   const revenueByPath = new Map<string, { revenue: number; transactions: number }>()
   for (const row of revenueRows) {
-    const path = dimVal(row, 0)
+    const rawPath = dimVal(row, 0)
+    const path = rawPath.split('?')[0]
     const revenue = metricFloat(row, 0)
     const transactions = metricInt(row, 1)
     const existing = revenueByPath.get(path)
@@ -147,6 +150,18 @@ export async function fetchBlogArticles(
     }
   }
 
+  // Log revenue data for debugging
+  let totalRevenue = 0
+  for (const rev of revenueByPath.values()) totalRevenue += rev.revenue
+  log('info', `GA4 revenue data: ${revenueRows.length} rijen, ${revenueByPath.size} unieke paden, totale omzet: €${totalRevenue.toFixed(2)}`)
+  if (revenueByPath.size > 0) {
+    const topPaths = [...revenueByPath.entries()]
+      .sort((a, b) => b[1].revenue - a[1].revenue)
+      .slice(0, 5)
+      .map(([p, r]) => `${p} (€${r.revenue.toFixed(2)})`)
+    log('info', `Top 5 revenue paden: ${topPaths.join(', ')}`)
+  }
+
   // Build organic users map
   const organicByPath = new Map<string, number>()
   for (const row of organicUserRows) {
@@ -155,6 +170,7 @@ export async function fetchBlogArticles(
   }
 
   // Build articles from pageview data, aggregate by pagePath
+  // First pass: aggregate pageviews and pick best title
   const byPath = new Map<string, GA4ArticleData>()
   for (const row of pageviewRows) {
     const pagePath = dimVal(row, 0)
@@ -168,15 +184,24 @@ export async function fetchBlogArticles(
         existing.pageTitle = pageTitle
       }
     } else {
-      const rev = revenueByPath.get(pagePath)
       byPath.set(pagePath, {
         pagePath,
         pageTitle,
         pageviews,
-        organicUsers: organicByPath.get(pagePath) || 0,
-        revenue: rev?.revenue || 0,
-        transactions: rev?.transactions || 0,
+        organicUsers: 0,
+        revenue: 0,
+        transactions: 0,
       })
+    }
+  }
+
+  // Second pass: merge organic users and revenue into aggregated articles
+  for (const [pagePath, article] of byPath) {
+    article.organicUsers = organicByPath.get(pagePath) || 0
+    const rev = revenueByPath.get(pagePath)
+    if (rev) {
+      article.revenue = rev.revenue
+      article.transactions = rev.transactions
     }
   }
 
@@ -234,9 +259,10 @@ export async function fetchBlogArticlesDaily(
   ])
 
   // Build revenue map: path|date → { revenue, transactions }
+  // Strip query strings from landingPage
   const revenueByKey = new Map<string, { revenue: number; transactions: number }>()
   for (const row of revenueRows) {
-    const path = dimVal(row, 0)
+    const path = dimVal(row, 0).split('?')[0]
     const date = formatDate(dimVal(row, 1))
     const key = `${path}|${date}`
     const revenue = metricFloat(row, 0)
@@ -259,7 +285,7 @@ export async function fetchBlogArticlesDaily(
     organicByKey.set(key, (organicByKey.get(key) || 0) + metricInt(row, 0))
   }
 
-  // Build daily data from pageviews, merge revenue + organic users
+  // Build daily data from pageviews, then merge revenue + organic users
   const byKey = new Map<string, GA4DailyData>()
   for (const row of pageviewRows) {
     const pagePath = dimVal(row, 0)
@@ -271,15 +297,24 @@ export async function fetchBlogArticlesDaily(
     if (existing) {
       existing.pageviews += pageviews
     } else {
-      const rev = revenueByKey.get(key)
       byKey.set(key, {
         pagePath,
         date,
         pageviews,
-        organicUsers: organicByKey.get(key) || 0,
-        revenue: rev?.revenue || 0,
-        transactions: rev?.transactions || 0,
+        organicUsers: 0,
+        revenue: 0,
+        transactions: 0,
       })
+    }
+  }
+
+  // Merge organic users and revenue into aggregated daily data
+  for (const [key, entry] of byKey) {
+    entry.organicUsers = organicByKey.get(key) || 0
+    const rev = revenueByKey.get(key)
+    if (rev) {
+      entry.revenue = rev.revenue
+      entry.transactions = rev.transactions
     }
   }
 
