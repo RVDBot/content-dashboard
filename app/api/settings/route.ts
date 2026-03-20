@@ -17,6 +17,7 @@ const SETTINGS_KEYS = [
   'gads_client_secret',
   'gads_refresh_token',
   'gads_customer_id',
+  'gads_auth_origin',
 ]
 
 const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret', 'anthropic_api_key', 'gads_client_secret', 'gads_refresh_token']

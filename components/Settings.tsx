@@ -781,12 +781,13 @@ export default function Settings({ onClose }: Props) {
                           </div>
                           <button
                             onClick={async () => {
+                              const origin = window.location.origin
                               await fetch('/api/settings', {
                                 method: 'PUT',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(settings),
+                                body: JSON.stringify({ ...settings, gads_auth_origin: origin }),
                               })
-                              const res = await fetch('/api/google-ads-auth')
+                              const res = await fetch(`/api/google-ads-auth?origin=${encodeURIComponent(origin)}`)
                               const data = await res.json()
                               if (data.url) {
                                 window.location.href = data.url
@@ -802,20 +803,19 @@ export default function Settings({ onClose }: Props) {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {gadsAuthUrl && (
-                          <div className="bg-surface-0 rounded-xl p-3 border border-border-subtle">
-                            <p className="text-text-tertiary text-[11px] mb-1">Voeg deze redirect URI toe in Google Cloud Console bij je OAuth2 Client:</p>
-                            <code className="text-text-primary text-[11px] font-mono bg-surface-2 px-2 py-1 rounded-md block break-all">{gadsAuthUrl}</code>
-                          </div>
-                        )}
+                        <div className="bg-surface-0 rounded-xl p-3 border border-border-subtle">
+                          <p className="text-text-tertiary text-[11px] mb-1">Voeg deze redirect URI toe in Google Cloud Console bij je OAuth2 Client:</p>
+                          <code className="text-text-primary text-[11px] font-mono bg-surface-2 px-2 py-1 rounded-md block break-all">{window.location.origin}/api/google-ads-auth/callback</code>
+                        </div>
                         <button
                           onClick={async () => {
+                            const origin = window.location.origin
                             await fetch('/api/settings', {
                               method: 'PUT',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify(settings),
+                              body: JSON.stringify({ ...settings, gads_auth_origin: origin }),
                             })
-                            const res = await fetch('/api/google-ads-auth')
+                            const res = await fetch(`/api/google-ads-auth?origin=${encodeURIComponent(origin)}`)
                             const data = await res.json()
                             if (data.url) {
                               setGadsAuthUrl(data.redirectUri)

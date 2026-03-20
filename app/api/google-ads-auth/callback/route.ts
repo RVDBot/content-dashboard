@@ -18,9 +18,11 @@ export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code')
   const error = req.nextUrl.searchParams.get('error')
 
-  const proto = req.headers.get('x-forwarded-proto') || 'http'
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3000'
-  const baseUrl = `${proto}://${host}`
+  // Use the stored origin (saved when user clicked "Autoriseren")
+  const baseUrl = getSetting('gads_auth_origin')
+  if (!baseUrl) {
+    return new NextResponse('Auth origin niet gevonden. Ga terug naar het dashboard en probeer opnieuw.', { status: 400 })
+  }
 
   if (error) {
     return NextResponse.redirect(`${baseUrl}/?gads_auth=error&message=${encodeURIComponent(error)}`)

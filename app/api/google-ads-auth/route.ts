@@ -14,12 +14,6 @@ function setSetting(key: string, value: string) {
     .run(key, value, value)
 }
 
-function getRedirectUri(req: NextRequest): string {
-  const proto = req.headers.get('x-forwarded-proto') || 'http'
-  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3000'
-  return `${proto}://${host}/api/google-ads-auth/callback`
-}
-
 // GET: generate auth URL
 export async function GET(req: NextRequest) {
   const authError = requireAuth(req)
@@ -30,16 +24,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Client ID niet ingesteld' }, { status: 400 })
   }
 
-  const redirectUri = getRedirectUri(req)
+  const origin = req.nextUrl.searchParams.get('origin')
+  if (!origin) {
+    return NextResponse.json({ error: 'Origin parameter ontbreekt' }, { status: 400 })
+  }
+
+  const redirectUri = `${origin}/api/google-ads-auth/callback`
   return NextResponse.json({ url: getAuthUrl(clientId, redirectUri), redirectUri })
 }
 
-// POST: exchange code for refresh token
+// POST: exchange code for refresh token (unused now, callback route handles this)
 export async function POST(req: NextRequest) {
   const authError = requireAuth(req)
   if (authError) return authError
 
-  const { code } = await req.json()
+  const { code, origin } = await req.json()
   if (!code) {
     return NextResponse.json({ error: 'Code is verplicht' }, { status: 400 })
   }
@@ -51,7 +50,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Client ID en Secret moeten eerst ingesteld worden' }, { status: 400 })
   }
 
-  const redirectUri = getRedirectUri(req)
+  const redirectUri = `${origin}/api/google-ads-auth/callback`
 
   try {
     const refreshToken = await exchangeCodeForToken(clientId, clientSecret, code, redirectUri)
