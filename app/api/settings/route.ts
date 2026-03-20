@@ -11,6 +11,7 @@ const SETTINGS_KEYS = [
   'chart_period',
   'refresh_frequency',
   'anthropic_api_key',
+  'ai_model',
 ]
 
 const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret', 'anthropic_api_key']

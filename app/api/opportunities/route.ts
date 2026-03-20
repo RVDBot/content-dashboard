@@ -9,12 +9,19 @@ export async function GET(req: NextRequest) {
   if (authError) return authError
 
   const refresh = req.nextUrl.searchParams.get('refresh') === '1'
+  const regenerate = req.nextUrl.searchParams.get('regenerate') === '1'
   const db = getDb()
 
-  if (refresh) {
+  if (regenerate) {
+    // Clear existing opportunities so AI generates fresh suggestions
+    db.prepare('DELETE FROM opportunities').run()
+    log('info', 'Opportunities gewist — nieuwe AI suggesties worden gegenereerd')
+  }
+
+  if (refresh || regenerate) {
     try {
       const result = await refreshOpportunities()
-      log('info', `Opportunities handmatig ververst: ${result.count}`)
+      log('info', `Opportunities ${regenerate ? 'opnieuw gegenereerd' : 'ververst'}: ${result.count}`)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       log('error', `Opportunities refresh fout: ${msg}`)

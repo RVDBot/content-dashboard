@@ -78,6 +78,7 @@ function initSchema(db: Database.Database) {
   try { db.exec(`ALTER TABLE articles ADD COLUMN organic_users INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE article_daily ADD COLUMN organic_users INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE ga4_properties ADD COLUMN search_console_url TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { db.exec(`ALTER TABLE opportunities ADD COLUMN generated_content TEXT`) } catch {}
   // Deduplicate opportunities and add unique index for existing databases
   try {
     db.exec(`
@@ -121,6 +122,7 @@ function initSchema(db: Database.Database) {
       status TEXT NOT NULL DEFAULT 'new',
       has_existing_content INTEGER NOT NULL DEFAULT 0,
       existing_url TEXT,
+      generated_content TEXT,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -131,6 +133,16 @@ function initSchema(db: Database.Database) {
       category TEXT NOT NULL DEFAULT 'general',
       language TEXT NOT NULL DEFAULT 'en',
       active INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS token_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      model TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      opportunity_id INTEGER,
+      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS autocomplete_cache (

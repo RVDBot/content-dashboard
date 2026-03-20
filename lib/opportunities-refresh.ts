@@ -4,7 +4,6 @@ import { expandSeedKeywords, AutocompleteTopic } from '@/lib/autocomplete'
 import { generateArticleSuggestions, ArticleSuggestion } from '@/lib/ai-suggestions'
 import { log } from '@/lib/logger'
 
-// Brand fit patterns for speedropeshop.com
 const BRAND_PATTERNS: { pattern: RegExp; score: number }[] = [
   { pattern: /speed\s*rope|freestyle\s*rope|beaded\s*rope|pvc\s*rope|long\s*handle/i, score: 100 },
   { pattern: /jump\s*rope|skipping\s*rope|springtouw|springseil|cuerda\s*de\s*saltar|corda\s*per\s*saltare|corde\s*[àa]\s*sauter/i, score: 80 },
@@ -35,10 +34,6 @@ function getDifficultyLabel(position: number | null): string {
   return 'easy'
 }
 
-function estimatedCTR(): number {
-  return 0.05
-}
-
 function normalizeLog(value: number, maxValue: number): number {
   if (value <= 0) return 0
   return Math.min(100, (Math.log10(value + 1) / Math.log10(maxValue + 1)) * 100)
@@ -52,18 +47,14 @@ function getSetting(key: string): string {
 function getConversionMetrics(): { conversionRate: number; avgOrderValue: number } {
   const db = getDb()
   const result = db.prepare(`
-    SELECT
-      SUM(revenue) as total_revenue,
-      SUM(transactions) as total_transactions,
+    SELECT SUM(revenue) as total_revenue, SUM(transactions) as total_transactions,
       SUM(organic_users) as total_organic_users
-    FROM articles
-    WHERE organic_users > 0
+    FROM articles WHERE organic_users > 0
   `).get() as { total_revenue: number; total_transactions: number; total_organic_users: number } | undefined
 
   if (!result || !result.total_organic_users || !result.total_transactions) {
     return { conversionRate: 0.02, avgOrderValue: 30 }
   }
-
   return {
     conversionRate: result.total_transactions / result.total_organic_users,
     avgOrderValue: result.total_revenue / result.total_transactions,
@@ -116,235 +107,200 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
     ON CONFLICT(query, page_url) DO UPDATE SET
       clicks = ?, impressions = ?, ctr = ?, position = ?, language = ?, updated_at = CURRENT_TIMESTAMP
   `)
-
-  const insertQueries = db.transaction((queries: typeof allQueries) => {
+  db.transaction((queries: typeof allQueries) => {
     for (const q of queries) {
-      upsertQuery.run(
-        q.query, q.page, q.language, q.clicks, q.impressions, q.ctr, q.position,
-        q.clicks, q.impressions, q.ctr, q.position, q.language,
-      )
+      upsertQuery.run(q.query, q.page, q.language, q.clicks, q.impressions, q.ctr, q.position,
+        q.clicks, q.impressions, q.ctr, q.position, q.language)
     }
-  })
-  insertQueries(allQueries)
+  })(allQueries)
   log('info', `Search queries opgeslagen: ${allQueries.length}`)
 
-  // 2. Identify content gaps from Search Console
+  // 2. Content gaps from Search Console
   const gapQueries = db.prepare(`
-    SELECT query, language,
-      SUM(impressions) as total_impressions,
-      SUM(clicks) as total_clicks,
+    SELECT query, language, SUM(impressions) as total_impressions, SUM(clicks) as total_clicks,
       MIN(position) as best_position,
       (SELECT page_url FROM search_queries sq2
        WHERE sq2.query = sq.query AND sq2.position = (SELECT MIN(position) FROM search_queries sq3 WHERE sq3.query = sq.query)
        LIMIT 1) as best_page
-    FROM search_queries sq
-    GROUP BY query
+    FROM search_queries sq GROUP BY query
     HAVING total_impressions > 100
-    ORDER BY total_impressions DESC
-    LIMIT 1000
+    ORDER BY total_impressions DESC LIMIT 1000
   `).all() as {
     query: string; language: string; total_impressions: number;
     total_clicks: number; best_position: number; best_page: string | null
   }[]
 
-  // 3. Expand seed keywords (Answer The Public style)
+  // 3. Expand seed keywords
   const seedKeywords = db.prepare('SELECT keyword, language FROM seed_keywords WHERE active = 1').all() as { keyword: string; language: string }[]
   let autocompleteTopics: AutocompleteTopic[] = []
   if (seedKeywords.length > 0) {
     autocompleteTopics = await expandSeedKeywords(seedKeywords)
   }
 
-  // 4. Build keyword data map — combine SC gaps + autocomplete
+  // 4. Build keyword data
   const scByQuery = new Map<string, { impressions: number; position: number; page: string | null }>()
   for (const gap of gapQueries) {
     scByQuery.set(gap.query.toLowerCase(), {
       impressions: Math.round(gap.total_impressions / 3),
-      position: gap.best_position,
-      page: gap.best_page,
+      position: gap.best_position, page: gap.best_page,
     })
   }
 
   const allKeywords = new Map<string, KeywordData>()
-
   for (const gap of gapQueries) {
     allKeywords.set(gap.query.toLowerCase(), {
-      keyword: gap.query,
-      source: 'search_console',
-      language: gap.language,
+      keyword: gap.query, source: 'search_console', language: gap.language,
       monthlyImpressions: Math.round(gap.total_impressions / 3),
-      currentPosition: gap.best_position,
-      bestPage: gap.best_page,
-      type: 'direct',
+      currentPosition: gap.best_position, bestPage: gap.best_page, type: 'direct',
     })
   }
-
   for (const topic of autocompleteTopics) {
     const key = topic.keyword.toLowerCase()
     if (allKeywords.has(key)) continue
     const scData = scByQuery.get(key)
     allKeywords.set(key, {
-      keyword: topic.keyword,
-      source: 'autocomplete',
-      language: topic.language,
+      keyword: topic.keyword, source: 'autocomplete', language: topic.language,
       monthlyImpressions: scData?.impressions || 0,
-      currentPosition: scData?.position || null,
-      bestPage: scData?.page || null,
-      type: topic.type,
+      currentPosition: scData?.position || null, bestPage: scData?.page || null, type: topic.type,
     })
   }
 
-  log('info', `Totaal keywords verzameld: ${allKeywords.size} (${gapQueries.length} SC gaps, ${autocompleteTopics.length} autocomplete)`)
+  log('info', `Keywords verzameld: ${allKeywords.size} (${gapQueries.length} SC, ${autocompleteTopics.length} autocomplete)`)
 
-  // 5. AI clustering — group keywords into article suggestions
+  // 5. AI suggestions — only if no existing opportunities, or explicitly forced
   const anthropicKey = getSetting('anthropic_api_key')
+  const aiModel = getSetting('ai_model') || 'claude-haiku-4-5-20251001'
+  const existingOpps = db.prepare('SELECT COUNT(*) as count FROM opportunities').get() as { count: number }
+
+  let aiSuggestions: ArticleSuggestion[] | null = null
+
+  if (anthropicKey && existingOpps.count === 0) {
+    // First time — generate AI suggestions
+    try {
+      const kwInputs = [...allKeywords.values()].map(k => ({
+        keyword: k.keyword, monthlyImpressions: k.monthlyImpressions, type: k.type,
+      }))
+      aiSuggestions = await generateArticleSuggestions(anthropicKey, aiModel, kwInputs)
+      log('info', `AI: ${aiSuggestions.length} artikel-ideeën gegenereerd`)
+    } catch (e) {
+      log('error', `AI suggesties fout: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  } else if (existingOpps.count > 0) {
+    log('info', 'Bestaande opportunities gevonden — AI suggesties overgeslagen, alleen metrics bijgewerkt')
+  }
+
+  // 6. Upsert opportunities
   const { conversionRate, avgOrderValue } = getConversionMetrics()
   const existingArticles = db.prepare('SELECT url FROM articles').all() as { url: string }[]
   const existingUrls = new Set(existingArticles.map(a => a.url.toLowerCase()))
-
-  // Get unique languages from keywords
-  const languages = new Set<string>()
-  for (const kw of allKeywords.values()) languages.add(kw.language)
-
-  let aiSuggestions: ArticleSuggestion[] = []
-
-  if (anthropicKey) {
-    const keywordInputs = [...allKeywords.values()].map(k => ({
-      keyword: k.keyword,
-      monthlyImpressions: k.monthlyImpressions,
-      type: k.type,
-      language: k.language,
-    }))
-
-    for (const lang of languages) {
-      try {
-        const suggestions = await generateArticleSuggestions(anthropicKey, keywordInputs, lang)
-        aiSuggestions.push(...suggestions)
-      } catch (e) {
-        log('error', `AI suggesties fout (${lang}): ${e instanceof Error ? e.message : String(e)}`)
-      }
-    }
-
-    log('info', `AI suggesties: ${aiSuggestions.length} artikelen gegenereerd`)
-  } else {
-    log('info', 'Geen Anthropic API key geconfigureerd — AI suggesties overgeslagen')
-  }
-
-  // 6. Clear old opportunities and insert new ones
-  db.prepare('DELETE FROM opportunities').run()
-
-  const insertOpp = db.prepare(`
-    INSERT INTO opportunities (keyword, title_suggestion, description, source, language,
-      monthly_impressions, estimated_volume, current_position, difficulty,
-      expected_traffic, expected_revenue, brand_fit_score, priority_score,
-      has_existing_content, existing_url, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-  `)
-
   const maxImpressions = Math.max(1, ...[...allKeywords.values()].map(k => k.monthlyImpressions))
+  const CTR = 0.05
 
   let count = 0
 
-  if (aiSuggestions.length > 0) {
-    // AI mode: each suggestion = one opportunity, with aggregated metrics from target keywords
-    const insertAI = db.transaction((suggestions: ArticleSuggestion[]) => {
-      for (const suggestion of suggestions) {
-        // Aggregate metrics from target keywords
+  if (aiSuggestions && aiSuggestions.length > 0) {
+    // Insert new AI-generated opportunities
+    const insertOpp = db.prepare(`
+      INSERT INTO opportunities (keyword, title_suggestion, description, source, language,
+        monthly_impressions, estimated_volume, current_position, difficulty,
+        expected_traffic, expected_revenue, brand_fit_score, priority_score,
+        has_existing_content, existing_url, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `)
+
+    db.transaction((suggestions: ArticleSuggestion[]) => {
+      for (const s of suggestions) {
         let totalImpressions = 0
         let bestPosition: number | null = null
         let bestPage: string | null = null
 
-        for (const targetKw of suggestion.targetKeywords) {
-          const kwData = allKeywords.get(targetKw.toLowerCase())
-          if (kwData) {
-            totalImpressions += kwData.monthlyImpressions
-            if (kwData.currentPosition && (!bestPosition || kwData.currentPosition < bestPosition)) {
-              bestPosition = kwData.currentPosition
-              bestPage = kwData.bestPage
+        for (const kw of s.targetKeywords) {
+          const data = allKeywords.get(kw.toLowerCase())
+          if (data) {
+            totalImpressions += data.monthlyImpressions
+            if (data.currentPosition && (!bestPosition || data.currentPosition < bestPosition)) {
+              bestPosition = data.currentPosition
+              bestPage = data.bestPage
             }
           }
         }
 
-        const primaryKeyword = suggestion.targetKeywords[0] || suggestion.title
-        const brandFit = Math.max(...suggestion.targetKeywords.map(k => getBrandFitScore(k)), getBrandFitScore(suggestion.title))
-        const difficultyScore = getDifficultyScore(bestPosition)
+        const brandFit = Math.max(...s.targetKeywords.map(k => getBrandFitScore(k)), getBrandFitScore(s.title))
+        const diffScore = getDifficultyScore(bestPosition)
         const difficulty = getDifficultyLabel(bestPosition)
-        const estimatedVolume = totalImpressions || 50
-        const expectedTraffic = Math.round(estimatedVolume * estimatedCTR())
-        const expectedRevenue = Math.round(expectedTraffic * conversionRate * avgOrderValue * 100) / 100
-
-        const volumeScore = normalizeLog(totalImpressions, maxImpressions)
-        const maxRevenue = maxImpressions * estimatedCTR() * conversionRate * avgOrderValue
-        const revenueScore = normalizeLog(expectedRevenue, maxRevenue)
-
-        const priorityScore = Math.round(
-          volumeScore * 0.30 +
-          revenueScore * 0.30 +
-          difficultyScore * 0.20 +
-          brandFit * 0.20
-        )
-
+        const volume = totalImpressions || 50
+        const traffic = Math.round(volume * CTR)
+        const revenue = Math.round(traffic * conversionRate * avgOrderValue * 100) / 100
+        const volScore = normalizeLog(totalImpressions, maxImpressions)
+        const maxRev = maxImpressions * CTR * conversionRate * avgOrderValue
+        const revScore = normalizeLog(revenue, maxRev)
+        const priority = Math.round(volScore * 0.30 + revScore * 0.30 + diffScore * 0.20 + brandFit * 0.20)
         const hasExisting = bestPage ? existingUrls.has(bestPage.toLowerCase()) : false
-        const description = `${suggestion.description}\n\nDoelzoekwoorden: ${suggestion.targetKeywords.join(', ')}`
+        const desc = `${s.description}\n\nDoelzoekwoorden: ${s.targetKeywords.join(', ')}`
 
         insertOpp.run(
-          primaryKeyword, suggestion.title, description,
-          `ai_${suggestion.angle}`, suggestion.language,
-          totalImpressions, estimatedVolume, bestPosition, difficulty,
-          expectedTraffic, expectedRevenue, brandFit, priorityScore,
+          s.targetKeywords[0] || s.title, s.title, desc, `ai_${s.angle}`, 'en',
+          totalImpressions, volume, bestPosition, difficulty,
+          traffic, revenue, brandFit, priority,
           hasExisting ? 1 : 0, hasExisting ? bestPage : null,
         )
         count++
       }
-    })
-    insertAI(aiSuggestions)
-  } else {
-    // Fallback: store keywords as individual opportunities (no AI)
-    const insertKeywords = db.transaction((keywords: KeywordData[]) => {
-      for (const kw of keywords) {
-        const brandFit = getBrandFitScore(kw.keyword)
-        const difficultyScore = getDifficultyScore(kw.currentPosition)
-        const difficulty = getDifficultyLabel(kw.currentPosition)
-        const estimatedVolume = kw.monthlyImpressions || 50
-        const expectedTraffic = Math.round(estimatedVolume * estimatedCTR())
-        const expectedRevenue = Math.round(expectedTraffic * conversionRate * avgOrderValue * 100) / 100
+    })(aiSuggestions)
+  } else if (existingOpps.count > 0) {
+    // Update metrics on existing opportunities without regenerating
+    const opps = db.prepare('SELECT id, keyword, description FROM opportunities').all() as { id: number; keyword: string; description: string | null }[]
+    const updateOpp = db.prepare(`
+      UPDATE opportunities SET monthly_impressions = ?, estimated_volume = ?,
+        current_position = ?, difficulty = ?, expected_traffic = ?, expected_revenue = ?,
+        brand_fit_score = ?, priority_score = ?, has_existing_content = ?, existing_url = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
 
-        const volumeScore = normalizeLog(kw.monthlyImpressions, maxImpressions)
-        const maxRevenue = maxImpressions * estimatedCTR() * conversionRate * avgOrderValue
-        const revenueScore = normalizeLog(expectedRevenue, maxRevenue)
+    db.transaction(() => {
+      for (const opp of opps) {
+        // Collect target keywords from description
+        const kwMatch = opp.description?.match(/Doelzoekwoorden: (.+)$/)
+        const targetKws = kwMatch ? kwMatch[1].split(', ') : [opp.keyword]
 
-        const priorityScore = Math.round(
-          volumeScore * 0.30 +
-          revenueScore * 0.30 +
-          difficultyScore * 0.20 +
-          brandFit * 0.20
-        )
+        let totalImpressions = 0
+        let bestPosition: number | null = null
+        let bestPage: string | null = null
 
-        const hasExisting = kw.bestPage ? existingUrls.has(kw.bestPage.toLowerCase()) : false
-
-        // Simple title suggestion
-        const capitalized = kw.keyword.charAt(0).toUpperCase() + kw.keyword.slice(1)
-        let title = `${capitalized}: Everything You Need to Know`
-        if (/^(how|what|why|when|where|which|can|is|are)\b/i.test(kw.keyword)) {
-          title = capitalized + (kw.keyword.endsWith('?') ? '' : '?')
-        } else if (/\bvs\.?\b/i.test(kw.keyword)) {
-          title = `${capitalized}: Differences, Pros & Cons`
-        } else if (/\bfor\b/i.test(kw.keyword)) {
-          title = `${capitalized}: Complete Guide`
+        for (const kw of targetKws) {
+          const data = allKeywords.get(kw.toLowerCase())
+          if (data) {
+            totalImpressions += data.monthlyImpressions
+            if (data.currentPosition && (!bestPosition || data.currentPosition < bestPosition)) {
+              bestPosition = data.currentPosition
+              bestPage = data.bestPage
+            }
+          }
         }
 
-        insertOpp.run(
-          kw.keyword, title, null, kw.source, kw.language,
-          kw.monthlyImpressions, estimatedVolume, kw.currentPosition, difficulty,
-          expectedTraffic, expectedRevenue, brandFit, priorityScore,
-          hasExisting ? 1 : 0, hasExisting ? kw.bestPage : null,
-        )
+        const brandFit = Math.max(...targetKws.map(k => getBrandFitScore(k)))
+        const diffScore = getDifficultyScore(bestPosition)
+        const difficulty = getDifficultyLabel(bestPosition)
+        const volume = totalImpressions || 50
+        const traffic = Math.round(volume * CTR)
+        const revenue = Math.round(traffic * conversionRate * avgOrderValue * 100) / 100
+        const volScore = normalizeLog(totalImpressions, maxImpressions)
+        const maxRev = maxImpressions * CTR * conversionRate * avgOrderValue
+        const revScore = normalizeLog(revenue, maxRev)
+        const priority = Math.round(volScore * 0.30 + revScore * 0.30 + diffScore * 0.20 + brandFit * 0.20)
+        const hasExisting = bestPage ? existingUrls.has(bestPage.toLowerCase()) : false
+
+        updateOpp.run(totalImpressions, volume, bestPosition, difficulty,
+          traffic, revenue, brandFit, priority,
+          hasExisting ? 1 : 0, hasExisting ? bestPage : null, opp.id)
         count++
       }
-    })
-    insertKeywords([...allKeywords.values()])
+    })()
+  } else {
+    log('info', 'Geen Anthropic API key — geen opportunities gegenereerd')
   }
 
-  log('info', `Opportunities ververst: ${count} totaal (AI: ${aiSuggestions.length > 0 ? 'ja' : 'nee'}, conv.ratio: ${(conversionRate * 100).toFixed(2)}%, gem. orderwaarde: €${avgOrderValue.toFixed(2)})`)
-
+  log('info', `Opportunities ververst: ${count} (AI: ${aiSuggestions ? 'ja' : 'nee/cached'})`)
   return { count }
 }

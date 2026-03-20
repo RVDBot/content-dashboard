@@ -91,6 +91,7 @@ export default function Settings({ onClose }: Props) {
     chart_period: '30',
     refresh_frequency: 'weekly',
     anthropic_api_key: '',
+    ai_model: 'claude-haiku-4-5-20251001',
   })
   const [properties, setProperties] = useState<(GA4PropertyForm & { id: number })[]>([])
   const [editingProp, setEditingProp] = useState<GA4PropertyForm | null>(null)
@@ -100,6 +101,7 @@ export default function Settings({ onClose }: Props) {
   const [showWcSecret, setShowWcSecret] = useState(false)
   const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'ai' | 'keywords' | 'logs'>('dashboard')
   const [showAnthropicKey, setShowAnthropicKey] = useState(false)
+  const [tokenUsage, setTokenUsage] = useState<{ total_input: number; total_output: number; by_action: Record<string, { input: number; output: number; count: number }> } | null>(null)
   const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [expandedLog, setExpandedLog] = useState<number | null>(null)
@@ -241,7 +243,12 @@ export default function Settings({ onClose }: Props) {
               ].map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => { setActiveTab(tab.id); if (tab.id === 'logs') fetchLogs(); if (tab.id === 'keywords') fetchKeywords() }}
+                  onClick={() => {
+                    setActiveTab(tab.id)
+                    if (tab.id === 'logs') fetchLogs()
+                    if (tab.id === 'keywords') fetchKeywords()
+                    if (tab.id === 'ai') fetch('/api/token-usage').then(r => r.json()).then(setTokenUsage).catch(() => {})
+                  }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 ${
                     activeTab === tab.id
                       ? 'text-text-primary bg-surface-3'
@@ -557,8 +564,8 @@ export default function Settings({ onClose }: Props) {
                   <div>
                     <h3 className="text-text-primary text-[13px] font-semibold mb-1">AI Artikel Suggesties</h3>
                     <p className="text-text-tertiary text-[11px] leading-relaxed">
-                      Gebruikt Claude om zoekwoorden te clusteren en concrete artikelideeën te genereren.
-                      Zonder API key worden keywords als individuele opportunities getoond.
+                      Claude clustert zoekwoorden en genereert 10 Engelse artikelideeën die werken in alle markten.
+                      Artikelen worden pas gegenereerd als je op &quot;Genereer&quot; klikt op de detailpagina.
                     </p>
                   </div>
                   <Field
@@ -570,12 +577,59 @@ export default function Settings({ onClose }: Props) {
                     onToggle={() => setShowAnthropicKey(!showAnthropicKey)}
                     placeholder="sk-ant-..."
                   />
-                  <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle">
-                    <p className="text-text-tertiary text-[11px] leading-relaxed">
-                      De AI analyseert alle verzamelde zoekwoorden (Search Console + Autocomplete) en groepeert ze in artikelclusters.
-                      Per cluster krijg je een titel, beschrijving, invalshoek en doelzoekwoorden.
-                      Gebruikt Claude Haiku voor snelheid en lage kosten (~$0.01 per refresh).
+                  <div className="space-y-1.5">
+                    <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider">Model</label>
+                    <select
+                      value={settings.ai_model}
+                      onChange={e => setSettings(p => ({ ...p, ai_model: e.target.value }))}
+                      className="w-full bg-surface-0 text-text-primary text-[13px] px-3 py-2.5 rounded-xl outline-none border border-border hover:border-text-tertiary focus:border-accent transition-colors duration-150 cursor-pointer"
+                    >
+                      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (snel, goedkoop)</option>
+                      <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (slim, gemiddeld)</option>
+                      <option value="claude-opus-4-6">Claude Opus 4.6 (krachtigst, duur)</option>
+                    </select>
+                    <p className="text-text-tertiary text-[11px]">
+                      Wordt gebruikt voor zowel artikelideeën als het genereren van volledige artikelen.
                     </p>
+                  </div>
+
+                  {/* Token usage */}
+                  <div className="border-t border-border-subtle pt-5">
+                    <h3 className="text-text-primary text-[13px] font-semibold mb-3">Tokengebruik</h3>
+                    {tokenUsage ? (
+                      <div className="space-y-3">
+                        <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider">Totaal</span>
+                            <span className="text-text-primary text-[13px] font-bold tabular-nums">
+                              {(tokenUsage.total_input + tokenUsage.total_output).toLocaleString('nl-NL')} tokens
+                            </span>
+                          </div>
+                          <div className="flex gap-4 text-[11px]">
+                            <span className="text-text-tertiary">Input: <strong className="text-text-secondary">{tokenUsage.total_input.toLocaleString('nl-NL')}</strong></span>
+                            <span className="text-text-tertiary">Output: <strong className="text-text-secondary">{tokenUsage.total_output.toLocaleString('nl-NL')}</strong></span>
+                          </div>
+                        </div>
+                        {Object.entries(tokenUsage.by_action).map(([action, data]) => (
+                          <div key={action} className="flex items-center justify-between bg-surface-0 rounded-xl px-3.5 py-2.5 border border-border-subtle">
+                            <div>
+                              <span className="text-text-primary text-[13px] font-medium">
+                                {action === 'suggestions' ? 'Artikelideeën' : action === 'generation' ? 'Artikelen genereren' : action}
+                              </span>
+                              <span className="text-text-tertiary text-[11px] ml-2">{data.count}x</span>
+                            </div>
+                            <span className="text-text-secondary text-[12px] font-semibold tabular-nums">
+                              {(data.input + data.output).toLocaleString('nl-NL')} tokens
+                            </span>
+                          </div>
+                        ))}
+                        {Object.keys(tokenUsage.by_action).length === 0 && (
+                          <p className="text-text-tertiary text-[13px]">Nog geen AI-gebruik geregistreerd</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-text-tertiary text-[13px]">Laden...</p>
+                    )}
                   </div>
                 </>
               )}
