@@ -21,6 +21,13 @@ interface Opportunity {
   has_existing_content: number
   existing_url: string | null
   generated_content: string | null
+  data_source: string | null
+}
+
+const DATA_SOURCE_INFO: Record<string, { label: string; color: string; description: string }> = {
+  keyword_planner: { label: 'Google Ads Keyword Planner', color: 'text-success bg-success/10', description: 'Zoekvolume gebaseerd op exacte data uit Google Ads Keyword Planner.' },
+  search_console: { label: 'Search Console', color: 'text-accent bg-accent-subtle', description: 'Zoekvolume geschat op basis van Search Console impressies (3 maanden).' },
+  estimated: { label: 'Schatting', color: 'text-text-tertiary bg-surface-2', description: 'Zoekvolume is een ruwe schatting — geen exacte data beschikbaar.' },
 }
 
 const STATUS_OPTIONS = [
@@ -189,6 +196,14 @@ export default function OpportunityDetail({ params }: { params: Promise<{ id: st
           )}
         </div>
 
+        {/* Data source indicator */}
+        {opp.data_source && DATA_SOURCE_INFO[opp.data_source] && (
+          <div className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 mb-4 ${DATA_SOURCE_INFO[opp.data_source].color}`}>
+            <span className="text-[11px] font-semibold">{DATA_SOURCE_INFO[opp.data_source].label}</span>
+            <span className="text-[11px] opacity-70">{DATA_SOURCE_INFO[opp.data_source].description}</span>
+          </div>
+        )}
+
         {/* Metrics grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
           <Tip tip="Maandelijks zoekvolume van alle doelzoekwoorden (Google Ads Keyword Planner indien geconfigureerd, anders Search Console impressies als proxy).">
@@ -197,7 +212,7 @@ export default function OpportunityDetail({ params }: { params: Promise<{ id: st
               <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.estimated_volume)}</p>
             </div>
           </Tip>
-          <Tip tip="Geschat maandelijks verkeer bij positie 5. Berekening: zoekvolume × 5% CTR.">
+          <Tip tip="Geschat maandelijks verkeer. Berekening: zoekvolume × CTR uit eigen Search Console data (per positie-range).">
             <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Verwacht verkeer</p>
               <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.expected_traffic)}</p>

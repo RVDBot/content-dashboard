@@ -22,6 +22,19 @@ interface Opportunity {
   has_existing_content: number
   existing_url: string | null
   generated_content: string | null
+  data_source: string | null
+}
+
+interface Benchmarks {
+  avgRevenuePerArticle: number
+  articleCount: number
+  revenuePerVisitor: number
+}
+
+const DATA_SOURCE_LABELS: Record<string, { label: string; color: string; tip: string }> = {
+  keyword_planner: { label: 'KP', color: 'text-success bg-success/10', tip: 'Zoekvolume uit Google Ads Keyword Planner (exacte data)' },
+  search_console: { label: 'SC', color: 'text-accent bg-accent-subtle', tip: 'Zoekvolume geschat op basis van Search Console impressies' },
+  estimated: { label: 'Est', color: 'text-text-tertiary bg-surface-2', tip: 'Zoekvolume is een schatting (geen exacte data beschikbaar)' },
 }
 
 const DIFFICULTY_COLORS: Record<string, { bg: string; text: string }> = {
@@ -86,6 +99,7 @@ type SortKey = 'priority_score' | 'expected_revenue' | 'monthly_impressions' | '
 
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([])
+  const [benchmarks, setBenchmarks] = useState<Benchmarks | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -112,6 +126,7 @@ export default function OpportunitiesPage() {
       .then(data => {
         setOpportunities(data.opportunities || [])
         setCached(!!data.cached)
+        if (data.benchmarks) setBenchmarks(data.benchmarks)
       })
       .catch(e => setError(e.message))
       .finally(() => { setLoading(false); setRefreshing(false) })
@@ -251,6 +266,14 @@ export default function OpportunitiesPage() {
                       <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{formatCurrency(summary.totalRevenue)}</p>
                     </div>
                   </Tip>
+                  {benchmarks && benchmarks.articleCount > 0 && (
+                    <Tip tip={`Benchmark: gemiddelde omzet van ${benchmarks.articleCount} bestaande artikelen met omzet. Omzet per bezoeker: €${benchmarks.revenuePerVisitor.toFixed(2)}.`}>
+                      <div className="hidden sm:block">
+                        <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Gem. artikel</p>
+                        <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{formatCurrency(benchmarks.avgRevenuePerArticle)}/mnd</p>
+                      </div>
+                    </Tip>
+                  )}
                   <Tip tip="Aantal artikelen waarvoor de volledige tekst al gegenereerd is via AI">
                     <div className="hidden sm:block">
                       <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Gegenereerd</p>
@@ -366,7 +389,17 @@ export default function OpportunitiesPage() {
                         <p className="text-text-tertiary text-[11px] tabular-nums">
                           <Tip tip="Maandelijks zoekvolume (Keyword Planner of Search Console impressies als fallback)">{formatNumber(opp.estimated_volume)} vol</Tip>
                           {' · '}
-                          <Tip tip="Verwacht maandelijks verkeer = zoekvolume × 5% CTR bij positie 5">{formatNumber(opp.expected_traffic)} bezoekers</Tip>
+                          <Tip tip="Verwacht maandelijks verkeer = zoekvolume × CTR uit eigen Search Console data">{formatNumber(opp.expected_traffic)} bezoekers</Tip>
+                          {opp.data_source && DATA_SOURCE_LABELS[opp.data_source] && (
+                            <>
+                              {' · '}
+                              <Tip tip={DATA_SOURCE_LABELS[opp.data_source].tip}>
+                                <span className={`inline-flex text-[10px] font-semibold px-1 py-0 rounded ${DATA_SOURCE_LABELS[opp.data_source].color}`}>
+                                  {DATA_SOURCE_LABELS[opp.data_source].label}
+                                </span>
+                              </Tip>
+                            </>
+                          )}
                         </p>
                         <select
                           value={opp.status}

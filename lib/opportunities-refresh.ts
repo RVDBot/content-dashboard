@@ -45,7 +45,7 @@ function getSetting(key: string): string {
   return (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value || ''
 }
 
-function getRevenuePerVisitor(): number {
+export function getRevenuePerVisitor(): number {
   const db = getDb()
   const result = db.prepare(`
     SELECT SUM(revenue) as total_revenue, SUM(organic_users) as total_organic_users
@@ -58,6 +58,68 @@ function getRevenuePerVisitor(): number {
   return result.total_revenue / result.total_organic_users
 }
 
+// CTR curve berekend uit eigen Search Console data per positie-range
+function getCtrCurve(): (position: number | null) => number {
+  const db = getDb()
+  const rows = db.prepare(`
+    SELECT
+      CASE
+        WHEN position <= 1 THEN 1
+        WHEN position <= 3 THEN 3
+        WHEN position <= 5 THEN 5
+        WHEN position <= 10 THEN 10
+        WHEN position <= 20 THEN 20
+        ELSE 50
+      END as pos_bucket,
+      SUM(clicks) as total_clicks,
+      SUM(impressions) as total_impressions
+    FROM search_queries
+    WHERE impressions > 0
+    GROUP BY pos_bucket
+    ORDER BY pos_bucket
+  `).all() as { pos_bucket: number; total_clicks: number; total_impressions: number }[]
+
+  const ctrByBucket = new Map<number, number>()
+  for (const row of rows) {
+    if (row.total_impressions > 0) {
+      ctrByBucket.set(row.pos_bucket, row.total_clicks / row.total_impressions)
+    }
+  }
+
+  // Log the CTR curve
+  const curveStr = [...ctrByBucket.entries()]
+    .map(([pos, ctr]) => `pos≤${pos}: ${(ctr * 100).toFixed(1)}%`)
+    .join(', ')
+  if (curveStr) log('info', `CTR-curve uit eigen SC data: ${curveStr}`)
+
+  return (position: number | null) => {
+    // For new articles, we target position 5-10
+    if (!position || position === 0) {
+      return ctrByBucket.get(10) || ctrByBucket.get(5) || 0.03
+    }
+    if (position <= 1) return ctrByBucket.get(1) || 0.30
+    if (position <= 3) return ctrByBucket.get(3) || 0.10
+    if (position <= 5) return ctrByBucket.get(5) || 0.05
+    if (position <= 10) return ctrByBucket.get(10) || 0.03
+    if (position <= 20) return ctrByBucket.get(20) || 0.015
+    return ctrByBucket.get(50) || 0.005
+  }
+}
+
+// Benchmark: gemiddelde omzet per artikel, per brand-fit categorie
+export function getArticleBenchmarks(): { avgRevenuePerArticle: number; articleCount: number } {
+  const db = getDb()
+  const result = db.prepare(`
+    SELECT AVG(revenue) as avg_revenue, COUNT(*) as count
+    FROM articles WHERE organic_users > 0 AND revenue > 0
+  `).get() as { avg_revenue: number; count: number } | undefined
+
+  return {
+    avgRevenuePerArticle: result?.avg_revenue || 0,
+    articleCount: result?.count || 0,
+  }
+}
+
 interface KeywordData {
   keyword: string
   source: string
@@ -68,7 +130,7 @@ interface KeywordData {
   type: string
 }
 
-export async function refreshOpportunities(): Promise<{ count: number }> {
+export async function refreshOpportunities(): Promise<{ count: number; benchmarks: { avgRevenuePerArticle: number; articleCount: number; revenuePerVisitor: number } }> {
   const db = getDb()
   const clientEmail = getSetting('ga4_client_email')
   const privateKey = getSetting('ga4_private_key')
@@ -280,9 +342,12 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
 
   // 6. Upsert opportunities
   const revenuePerVisitor = getRevenuePerVisitor()
+  const getCtr = getCtrCurve()
+  const benchmarks = getArticleBenchmarks()
   const existingArticles = db.prepare('SELECT url FROM articles').all() as { url: string }[]
   const existingUrls = new Set(existingArticles.map(a => a.url.toLowerCase()))
-  const CTR = 0.05
+
+  log('info', `Omzet per bezoeker: €${revenuePerVisitor.toFixed(2)} (uit ${benchmarks.articleCount} artikelen, gem. €${benchmarks.avgRevenuePerArticle.toFixed(2)}/artikel)`)
 
   let count = 0
 
@@ -307,18 +372,35 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
     const brandFit = Math.max(...targetKws.map(k => getBrandFitScore(k)))
     const diffScore = getDifficultyScore(bestPosition)
     const difficulty = getDifficultyLabel(bestPosition)
-    const traffic = Math.round(volume * CTR)
+
+    // Use own CTR curve instead of fixed 5%
+    // For new content (no position), target position 5-10
+    const targetPosition = bestPosition && bestPosition <= 20 ? bestPosition : null
+    const ctr = getCtr(targetPosition)
+    const traffic = Math.round(volume * ctr)
     const revenue = Math.round(traffic * revenuePerVisitor * 100) / 100
+
+    // Track data source
+    let dataSource = 'estimated'
+    const hasPlanner = targetKws.some(kw => {
+      const v = keywordVolumes.get(kw.toLowerCase())
+      return v !== undefined && v > 0
+    })
+    if (hasPlanner) {
+      dataSource = 'keyword_planner'
+    } else if (totalImpressions > 0) {
+      dataSource = 'search_console'
+    }
 
     // For priority scoring, normalize against max values
     const maxVolume = Math.max(1, ...[...allKeywords.values()].map(k => k.monthlyImpressions), ...keywordVolumes.values())
     const volScore = normalizeLog(searchVolume, maxVolume)
-    const maxRev = maxVolume * CTR * revenuePerVisitor
+    const maxRev = maxVolume * ctr * revenuePerVisitor
     const revScore = normalizeLog(revenue, maxRev)
     const priority = Math.round(volScore * 0.30 + revScore * 0.30 + diffScore * 0.20 + brandFit * 0.20)
     const hasExisting = bestPage ? existingUrls.has(bestPage.toLowerCase()) : false
 
-    return { totalImpressions, searchVolume: volume, bestPosition, bestPage, brandFit, diffScore, difficulty, traffic, revenue, priority, hasExisting }
+    return { totalImpressions, searchVolume: volume, bestPosition, bestPage, brandFit, diffScore, difficulty, traffic, revenue, priority, hasExisting, dataSource, ctr }
   }
 
   if (aiSuggestions && aiSuggestions.length > 0) {
@@ -327,8 +409,8 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
       INSERT INTO opportunities (keyword, title_suggestion, description, source, language,
         monthly_impressions, estimated_volume, current_position, difficulty,
         expected_traffic, expected_revenue, brand_fit_score, priority_score,
-        has_existing_content, existing_url, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        has_existing_content, existing_url, data_source, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `)
 
     db.transaction((suggestions: ArticleSuggestion[]) => {
@@ -337,13 +419,13 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
         const brandFit = Math.max(m.brandFit, getBrandFitScore(s.title))
         const desc = `${s.description}\n\nDoelzoekwoorden: ${s.targetKeywords.join(', ')}`
 
-        log('info', `AI artikel "${s.title}": vol=${m.searchVolume}, traffic=${m.traffic}, rev=€${m.revenue}`)
+        log('info', `AI artikel "${s.title}": vol=${m.searchVolume}, traffic=${m.traffic}, rev=€${m.revenue}, CTR=${(m.ctr * 100).toFixed(1)}%, bron=${m.dataSource}`)
 
         insertOpp.run(
           s.targetKeywords[0] || s.title, s.title, desc, `ai_${s.angle}`, 'en',
           m.totalImpressions, m.searchVolume, m.bestPosition, m.difficulty,
           m.traffic, m.revenue, brandFit, m.priority,
-          m.hasExisting ? 1 : 0, m.hasExisting ? m.bestPage : null,
+          m.hasExisting ? 1 : 0, m.hasExisting ? m.bestPage : null, m.dataSource,
         )
         count++
       }
@@ -355,7 +437,7 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
       UPDATE opportunities SET monthly_impressions = ?, estimated_volume = ?,
         current_position = ?, difficulty = ?, expected_traffic = ?, expected_revenue = ?,
         brand_fit_score = ?, priority_score = ?, has_existing_content = ?, existing_url = ?,
-        updated_at = CURRENT_TIMESTAMP
+        data_source = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `)
 
@@ -367,7 +449,7 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
 
         updateOpp.run(m.totalImpressions, m.searchVolume, m.bestPosition, m.difficulty,
           m.traffic, m.revenue, m.brandFit, m.priority,
-          m.hasExisting ? 1 : 0, m.hasExisting ? m.bestPage : null, opp.id)
+          m.hasExisting ? 1 : 0, m.hasExisting ? m.bestPage : null, m.dataSource, opp.id)
         count++
       }
     })()
@@ -376,5 +458,5 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
   }
 
   log('info', `Opportunities ververst: ${count} (AI: ${aiSuggestions ? 'ja' : 'nee/cached'}, Keyword Planner: ${hasKeywordPlanner ? 'ja' : 'nee'})`)
-  return { count }
+  return { count, benchmarks: { ...benchmarks, revenuePerVisitor: revenuePerVisitor } }
 }

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Ads API – Design Documentation – Content Dashboard</title>
+  <style>
+    @page { margin: 2cm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a1a; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .subtitle { color: #666; font-size: 14px; margin-bottom: 32px; }
+    h2 { font-size: 16px; margin-top: 28px; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #e5e5e5; }
+    h3 { font-size: 14px; margin-top: 16px; margin-bottom: 4px; }
+    p, li { font-size: 13px; margin-bottom: 8px; }
+    ul { padding-left: 20px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 12px; border: 1px solid #e5e5e5; }
+    th { background: #f7f7f7; font-weight: 600; }
+    .header-meta { display: flex; gap: 24px; margin-bottom: 32px; font-size: 12px; color: #888; }
+    .flow { background: #fafafa; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin: 12px 0; font-size: 13px; }
+    .flow-step { display: flex; gap: 12px; margin-bottom: 8px; }
+    .flow-step:last-child { margin-bottom: 0; }
+    .flow-num { background: #333; color: #fff; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+    code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e5e5e5; font-size: 11px; color: #999; }
+  </style>
+</head>
+<body>
+
+  <h1>Design Documentation</h1>
+  <p class="subtitle">Google Ads API – Basic Access Application</p>
+
+  <div class="header-meta">
+    <span><strong>Tool:</strong> Content Dashboard</span>
+    <span><strong>Company:</strong> SpeedRopeShop</span>
+    <span><strong>Date:</strong> March 2026</span>
+  </div>
+
+  <h2>1. Overview</h2>
+  <p>
+    Content Dashboard is an internal content planning tool for <strong>SpeedRopeShop</strong> (speedropeshop.com),
+    an e-commerce store specializing in jump ropes and fitness equipment. The tool helps the site owner
+    decide which blog articles to write for maximum organic traffic and revenue.
+  </p>
+  <p>
+    The Google Ads API is used exclusively for the <strong>Keyword Planner</strong> service to retrieve
+    monthly search volumes for target keywords. This data feeds into a scoring model that prioritizes
+    content opportunities.
+  </p>
+
+  <h2>2. API Usage</h2>
+
+  <h3>2.1 Endpoints Used</h3>
+  <table>
+    <tr>
+      <th>Endpoint</th>
+      <th>Method</th>
+      <th>Purpose</th>
+    </tr>
+    <tr>
+      <td><code>customers/{id}:generateKeywordIdeas</code></td>
+      <td>POST</td>
+      <td>Retrieve average monthly search volumes for target keywords</td>
+    </tr>
+  </table>
+
+  <h3>2.2 Usage Volume</h3>
+  <table>
+    <tr>
+      <th>Metric</th>
+      <th>Value</th>
+    </tr>
+    <tr>
+      <td>API calls per week</td>
+      <td>1–5</td>
+    </tr>
+    <tr>
+      <td>Keywords per request</td>
+      <td>10–20</td>
+    </tr>
+    <tr>
+      <td>Total keywords per week</td>
+      <td>10–50</td>
+    </tr>
+    <tr>
+      <td>Cache duration</td>
+      <td>7 days</td>
+    </tr>
+    <tr>
+      <td>Users</td>
+      <td>1 (site owner)</td>
+    </tr>
+  </table>
+
+  <h3>2.3 Data Flow</h3>
+  <div class="flow">
+    <div class="flow-step">
+      <span class="flow-num">1</span>
+      <span>AI generates 10 article ideas with target keywords based on Google Search Console data and autocomplete suggestions</span>
+    </div>
+    <div class="flow-step">
+      <span class="flow-num">2</span>
+      <span>Target keywords (10–50) are sent to the <strong>Keyword Planner API</strong> to fetch monthly search volumes</span>
+    </div>
+    <div class="flow-step">
+      <span class="flow-num">3</span>
+      <span>Search volumes are <strong>cached in a local database for 7 days</strong> to minimize API calls</span>
+    </div>
+    <div class="flow-step">
+      <span class="flow-num">4</span>
+      <span>Volumes are used to calculate expected traffic (volume × estimated CTR) and expected revenue (traffic × revenue per visitor)</span>
+    </div>
+    <div class="flow-step">
+      <span class="flow-num">5</span>
+      <span>Articles are ranked by a priority score combining search volume, revenue potential, difficulty, and brand fit</span>
+    </div>
+  </div>
+
+  <h2>3. Architecture</h2>
+
+  <h3>3.1 Technology Stack</h3>
+  <ul>
+    <li><strong>Framework:</strong> Next.js 15 (TypeScript)</li>
+    <li><strong>Database:</strong> SQLite (local, single-user)</li>
+    <li><strong>Hosting:</strong> Self-hosted VPS</li>
+    <li><strong>Authentication:</strong> OAuth2 (web application flow)</li>
+  </ul>
+
+  <h3>3.2 Data Storage</h3>
+  <p>
+    Keyword volumes are cached in a local <code>keyword_volumes</code> SQLite table with a 7-day TTL.
+    Only the keyword text, average monthly searches, and competition level are stored.
+    No personal or advertiser data is collected or shared.
+  </p>
+
+  <h3>3.3 Security</h3>
+  <ul>
+    <li>OAuth2 refresh token stored encrypted in a local database (not in code or version control)</li>
+    <li>Dashboard is password-protected and accessible only to the site owner</li>
+    <li>The tool is not publicly accessible or customer-facing</li>
+    <li>No Google Ads data is shared with third parties</li>
+  </ul>
+
+  <h2>4. Compliance</h2>
+  <ul>
+    <li>The tool accesses only the <strong>Keyword Planner</strong> service — no campaign management, bidding, or ad creation</li>
+    <li>All API responses are cached to minimize request volume</li>
+    <li>The tool does not modify any Google Ads account data (read-only usage)</li>
+    <li>The tool complies with the <a href="https://developers.google.com/google-ads/api/docs/terms">Google Ads API Terms of Service</a></li>
+    <li>The tool is used exclusively for the applicant's own Google Ads account</li>
+  </ul>
+
+  <h2>5. Contact</h2>
+  <table>
+    <tr>
+      <th>Field</th>
+      <th>Value</th>
+    </tr>
+    <tr>
+      <td>Website</td>
+      <td>speedropeshop.com</td>
+    </tr>
+    <tr>
+      <td>Google Ads Customer ID</td>
+      <td>341-326-5047</td>
+    </tr>
+    <tr>
+      <td>Tool access</td>
+      <td>Internal only (1 user)</td>
+    </tr>
+  </table>
+
+  <div class="footer">
+    Content Dashboard – Google Ads API Design Documentation – March 2026
+  </div>
+
+</body>
+</html>

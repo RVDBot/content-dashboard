@@ -79,6 +79,7 @@ function initSchema(db: Database.Database) {
   try { db.exec(`ALTER TABLE article_daily ADD COLUMN organic_users INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE ga4_properties ADD COLUMN search_console_url TEXT NOT NULL DEFAULT ''`) } catch {}
   try { db.exec(`ALTER TABLE opportunities ADD COLUMN generated_content TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE opportunities ADD COLUMN data_source TEXT NOT NULL DEFAULT 'estimated'`) } catch {}
   // Deduplicate opportunities and add unique index for existing databases
   try {
     db.exec(`

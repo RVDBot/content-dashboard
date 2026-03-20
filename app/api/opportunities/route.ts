@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { requireAuth } from '@/lib/auth-guard'
-import { refreshOpportunities } from '@/lib/opportunities-refresh'
+import { refreshOpportunities, getArticleBenchmarks, getRevenuePerVisitor } from '@/lib/opportunities-refresh'
 import { log } from '@/lib/logger'
 
 export async function GET(req: NextRequest) {
@@ -33,7 +33,18 @@ export async function GET(req: NextRequest) {
     SELECT * FROM opportunities ORDER BY priority_score DESC
   `).all()
 
-  return NextResponse.json({ opportunities, cached: !refresh })
+  const benchmarks = getArticleBenchmarks()
+  const revenuePerVisitor = getRevenuePerVisitor()
+
+  return NextResponse.json({
+    opportunities,
+    cached: !refresh,
+    benchmarks: {
+      avgRevenuePerArticle: benchmarks.avgRevenuePerArticle,
+      articleCount: benchmarks.articleCount,
+      revenuePerVisitor,
+    },
+  })
 }
 
 export async function PATCH(req: NextRequest) {
