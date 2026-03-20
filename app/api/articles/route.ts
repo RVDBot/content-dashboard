@@ -23,16 +23,16 @@ export async function GET(req: NextRequest) {
   // Return cached data if available and no refresh requested
   if (!refresh) {
     const cached = db.prepare('SELECT * FROM articles ORDER BY revenue DESC').all() as {
-      url: string; title: string; language: string | null; group_id: number | null; pageviews: number; sessions: number; revenue: number; transactions: number
+      url: string; title: string; language: string | null; group_id: number | null; pageviews: number; organic_users: number; revenue: number; transactions: number
     }[]
     if (cached.length > 0) {
       const daily = db.prepare('SELECT * FROM article_daily ORDER BY date ASC').all() as {
-        url: string; date: string; pageviews: number; sessions: number; revenue: number; transactions: number
+        url: string; date: string; pageviews: number; organic_users: number; revenue: number; transactions: number
       }[]
       return NextResponse.json({
         articles: cached.map(a => ({
           ...a,
-          revenuePerSession: a.sessions > 0 ? a.revenue / a.sessions : 0,
+          revenuePerUser: a.organic_users > 0 ? a.revenue / a.organic_users : 0,
         })),
         daily,
         cached: true,
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
   const enProp = properties.find(p => p.language === 'en') || properties[0]
   const enBase = enProp.base_url.replace(/\/+$/, '')
 
-  // Fetch all sitemaps in parallel: EN post-sitemap for groups + each property's sitemaps
+  // Fetch all sitemaps in parallel
   const postSitemapUrls = new Set<string>()
   const categorySitemapUrls = new Set<string>()
   for (const prop of properties) {
@@ -89,8 +89,6 @@ export async function GET(req: NextRequest) {
   let groups = postResults[0]?.groups || []
   for (const result of postResults) {
     for (const p of result.validPaths) validPaths.add(p)
-    // Use the EN site's groups (first result) for translation mapping
-    // but merge groups from other sitemaps if they add new ones
   }
 
   // Use the EN property's sitemap for canonical translation groups
@@ -124,34 +122,34 @@ export async function GET(req: NextRequest) {
   db.prepare('DELETE FROM article_daily').run()
 
   const upsertArticle = db.prepare(`
-    INSERT INTO articles (url, title, language, group_id, pageviews, sessions, revenue, transactions, updated_at)
+    INSERT INTO articles (url, title, language, group_id, pageviews, organic_users, revenue, transactions, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(url) DO UPDATE SET
       title = excluded.title,
       language = excluded.language,
       group_id = excluded.group_id,
       pageviews = excluded.pageviews,
-      sessions = excluded.sessions,
+      organic_users = excluded.organic_users,
       revenue = excluded.revenue,
       transactions = excluded.transactions,
       updated_at = CURRENT_TIMESTAMP
   `)
 
   const upsertDaily = db.prepare(`
-    INSERT INTO article_daily (url, date, pageviews, sessions, revenue, transactions)
+    INSERT INTO article_daily (url, date, pageviews, organic_users, revenue, transactions)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(url, date) DO UPDATE SET
       pageviews = excluded.pageviews,
-      sessions = excluded.sessions,
+      organic_users = excluded.organic_users,
       revenue = excluded.revenue,
       transactions = excluded.transactions
   `)
 
   for (const prop of properties) {
     try {
-      log('info', `GA4 data ophalen voor ${prop.name}`, { property_id: prop.property_id, language: prop.language })
+      log('info', `GA4 data ophalen voor ${prop.name} (alleen organisch zoekverkeer)`, { property_id: prop.property_id, language: prop.language })
 
-      // Fetch aggregate (365 days) — no dimension filter, filter server-side
+      // Fetch aggregate (365 days) — organic search only, filter by sitemap
       const ga4Data = await fetchBlogArticles(credentials, prop.property_id)
       let included = 0
       let skipped = 0
@@ -163,7 +161,7 @@ export async function GET(req: NextRequest) {
         const groupId = pathToGroup.get(row.pagePath) ?? null
         const baseUrl = prop.base_url.replace(/\/$/, '')
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
-        upsertArticle.run(fullUrl, row.pageTitle, prop.language, groupId, row.pageviews, row.sessions, row.revenue, row.transactions)
+        upsertArticle.run(fullUrl, row.pageTitle, prop.language, groupId, row.pageviews, row.organicUsers, row.revenue, row.transactions)
         included++
       }
 
@@ -178,7 +176,7 @@ export async function GET(req: NextRequest) {
         }
         const baseUrl = prop.base_url.replace(/\/$/, '')
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
-        upsertDaily.run(fullUrl, row.date, row.pageviews, row.sessions, row.revenue, row.transactions)
+        upsertDaily.run(fullUrl, row.date, row.pageviews, row.organicUsers, row.revenue, row.transactions)
         dailyIncluded++
       }
 
@@ -191,11 +189,11 @@ export async function GET(req: NextRequest) {
   }
 
   const articles = db.prepare('SELECT * FROM articles ORDER BY revenue DESC').all() as {
-    url: string; title: string; language: string | null; group_id: number | null; pageviews: number; sessions: number; revenue: number; transactions: number
+    url: string; title: string; language: string | null; group_id: number | null; pageviews: number; organic_users: number; revenue: number; transactions: number
   }[]
 
   const daily = db.prepare('SELECT * FROM article_daily ORDER BY date ASC').all() as {
-    url: string; date: string; pageviews: number; sessions: number; revenue: number; transactions: number
+    url: string; date: string; pageviews: number; organic_users: number; revenue: number; transactions: number
   }[]
 
   log('info', `Data vernieuwd: ${articles.length} artikelen, ${daily.length} dagelijkse rijen`, {
@@ -208,7 +206,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     articles: articles.map(a => ({
       ...a,
-      revenuePerSession: a.sessions > 0 ? a.revenue / a.sessions : 0,
+      revenuePerUser: a.organic_users > 0 ? a.revenue / a.organic_users : 0,
     })),
     daily,
     cached: false,

@@ -75,6 +75,8 @@ function initSchema(db: Database.Database) {
   try { db.exec(`ALTER TABLE articles ADD COLUMN group_id INTEGER`) } catch {}
   try { db.exec(`ALTER TABLE ga4_properties ADD COLUMN post_sitemap_path TEXT NOT NULL DEFAULT '/post-sitemap.xml'`) } catch {}
   try { db.exec(`ALTER TABLE ga4_properties ADD COLUMN category_sitemap_path TEXT NOT NULL DEFAULT '/category-sitemap.xml'`) } catch {}
+  try { db.exec(`ALTER TABLE articles ADD COLUMN organic_users INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { db.exec(`ALTER TABLE article_daily ADD COLUMN organic_users INTEGER NOT NULL DEFAULT 0`) } catch {}
 }
 
 export interface GA4Property {

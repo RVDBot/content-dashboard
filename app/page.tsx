@@ -10,17 +10,17 @@ interface Article {
   language: string | null
   group_id: number | null
   pageviews: number
-  sessions: number
+  organic_users: number
   revenue: number
   transactions: number
-  revenuePerSession: number
+  revenuePerUser: number
 }
 
 interface DailyRow {
   url: string
   date: string
   pageviews: number
-  sessions: number
+  organic_users: number
   revenue: number
   transactions: number
 }
@@ -30,9 +30,8 @@ interface ArticleGroup {
   title: string
   languages: Record<string, Article>
   totalRevenue: number
-  totalSessions: number
-  // daily data keyed by date, then by language
-  daily: Record<string, Record<string, { revenue: number; sessions: number }>>
+  totalOrganicUsers: number
+  daily: Record<string, Record<string, { revenue: number; organicUsers: number }>>
 }
 
 const LANG_COLORS: Record<string, string> = {
@@ -94,7 +93,6 @@ function SettingsIcon() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ChartTooltip({ active, payload, label, metric }: any) {
   if (!active || !payload?.length) return null
-  // Format date label
   const d = new Date(label + 'T00:00:00')
   const dateStr = d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
   return (
@@ -125,7 +123,7 @@ function ArticleCard({
 }: {
   group: ArticleGroup
   languages: string[]
-  metric: 'revenue' | 'sessions'
+  metric: 'revenue' | 'organicUsers'
   rank: number
   allDates: string[]
 }) {
@@ -138,12 +136,11 @@ function ArticleCard({
     const point: Record<string, string | number> = { date }
     for (const lang of activeLangs) {
       const dayData = group.daily[date]?.[lang]
-      point[lang] = dayData ? (metric === 'revenue' ? dayData.revenue : dayData.sessions) : 0
+      point[lang] = dayData ? (metric === 'revenue' ? dayData.revenue : dayData.organicUsers) : 0
     }
     return point
   })
 
-  // Check if there's any daily data at all
   const hasDaily = chartData.some(d => activeLangs.some(l => (d[l] as number) > 0))
 
   return (
@@ -177,7 +174,7 @@ function ArticleCard({
             {formatCurrency(group.totalRevenue)}
           </p>
           <p className="text-text-tertiary text-[11px] mt-1 tabular-nums">
-            {formatNumber(group.totalSessions)} bezoekers &middot; 365d
+            {formatNumber(group.totalOrganicUsers)} organische bezoekers &middot; 365d
           </p>
         </div>
       </div>
@@ -223,7 +220,7 @@ function ArticleCard({
             </ResponsiveContainer>
           </div>
 
-          {/* Per-language totals (30 day) */}
+          {/* Per-language totals (365d) */}
           <div className="flex flex-wrap gap-x-5 gap-y-1 mt-2">
             {activeLangs.map(lang => {
               const a = group.languages[lang]
@@ -233,7 +230,7 @@ function ArticleCard({
                   <span className="w-2 h-2 rounded-full" style={{ backgroundColor: LANG_COLORS[lang] || '#94a3b8' }} />
                   <span className="text-text-tertiary">{LANG_LABELS[lang] || lang.toUpperCase()}</span>
                   <span className="text-text-secondary font-semibold tabular-nums">
-                    {metric === 'revenue' ? formatCurrency(a.revenue, 2) : formatNumber(a.sessions)}
+                    {metric === 'revenue' ? formatCurrency(a.revenue, 2) : formatNumber(a.organic_users)}
                   </span>
                   <span className="text-text-tertiary">(365d)</span>
                 </div>
@@ -254,7 +251,7 @@ export default function Home() {
   const [showSettings, setShowSettings] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [cached, setCached] = useState(false)
-  const [metric, setMetric] = useState<'revenue' | 'sessions'>('revenue')
+  const [metric, setMetric] = useState<'revenue' | 'organicUsers'>('revenue')
 
   function loadArticles(refresh = false) {
     const url = refresh ? '/api/articles?refresh=1' : '/api/articles'
@@ -284,14 +281,12 @@ export default function Home() {
 
   useEffect(() => { loadArticles() }, [])
 
-  // Build URL → language lookup
   const urlToLang = useMemo(() => {
     const map = new Map<string, string>()
     articles.forEach(a => { if (a.language) map.set(a.url, a.language) })
     return map
   }, [articles])
 
-  // Build URL → group key lookup (using group_id from sitemap hreflang, fallback to slug)
   const urlToGroupKey = useMemo(() => {
     const map = new Map<string, string>()
     articles.forEach(a => {
@@ -301,7 +296,6 @@ export default function Home() {
     return map
   }, [articles])
 
-  // Group articles by group_id (from sitemap hreflang), including daily data
   const groups = useMemo<ArticleGroup[]>(() => {
     const map = new Map<string, ArticleGroup>()
 
@@ -309,12 +303,12 @@ export default function Home() {
       const key = urlToGroupKey.get(a.url) || `s:${extractSlug(a.url)}`
       let group = map.get(key)
       if (!group) {
-        group = { key, title: '', languages: {}, totalRevenue: 0, totalSessions: 0, daily: {} }
+        group = { key, title: '', languages: {}, totalRevenue: 0, totalOrganicUsers: 0, daily: {} }
         map.set(key, group)
       }
       if (a.language) group.languages[a.language] = a
       group.totalRevenue += a.revenue
-      group.totalSessions += a.sessions
+      group.totalOrganicUsers += a.organic_users
       if (a.language === 'en' || !group.title) group.title = a.title || extractSlug(a.url)
     }
 
@@ -327,9 +321,9 @@ export default function Home() {
       const lang = urlToLang.get(d.url)
       if (!lang) continue
       if (!group.daily[d.date]) group.daily[d.date] = {}
-      if (!group.daily[d.date][lang]) group.daily[d.date][lang] = { revenue: 0, sessions: 0 }
+      if (!group.daily[d.date][lang]) group.daily[d.date][lang] = { revenue: 0, organicUsers: 0 }
       group.daily[d.date][lang].revenue += d.revenue
-      group.daily[d.date][lang].sessions += d.sessions
+      group.daily[d.date][lang].organicUsers += d.organic_users
     }
 
     return [...map.values()]
@@ -345,7 +339,6 @@ export default function Home() {
     })
   }, [articles])
 
-  // All unique dates sorted
   const allDates = useMemo(() => {
     const dates = new Set<string>()
     daily.forEach(d => dates.add(d.date))
@@ -354,23 +347,23 @@ export default function Home() {
 
   const sortedGroups = useMemo(() => {
     return [...groups].sort((a, b) =>
-      metric === 'revenue' ? b.totalRevenue - a.totalRevenue : b.totalSessions - a.totalSessions
+      metric === 'revenue' ? b.totalRevenue - a.totalRevenue : b.totalOrganicUsers - a.totalOrganicUsers
     )
   }, [groups, metric])
 
   const langTotals = useMemo(() => {
-    const totals: Record<string, { revenue: number; sessions: number }> = {}
+    const totals: Record<string, { revenue: number; organicUsers: number }> = {}
     for (const a of articles) {
       const lang = a.language || 'unknown'
-      if (!totals[lang]) totals[lang] = { revenue: 0, sessions: 0 }
+      if (!totals[lang]) totals[lang] = { revenue: 0, organicUsers: 0 }
       totals[lang].revenue += a.revenue
-      totals[lang].sessions += a.sessions
+      totals[lang].organicUsers += a.organic_users
     }
     return totals
   }, [articles])
 
   const totalRevenue = articles.reduce((s, a) => s + a.revenue, 0)
-  const totalSessions = articles.reduce((s, a) => s + a.sessions, 0)
+  const totalOrganicUsers = articles.reduce((s, a) => s + a.organic_users, 0)
 
   return (
     <div className="min-h-screen">
@@ -436,9 +429,9 @@ export default function Home() {
                     </p>
                   </div>
                   <div>
-                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Bezoekers</p>
+                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Organisch</p>
                     <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">
-                      {formatNumber(totalSessions)}
+                      {formatNumber(totalOrganicUsers)}
                     </p>
                   </div>
                   <div className="hidden sm:block">
@@ -475,16 +468,16 @@ export default function Home() {
                   Omzet
                 </button>
                 <button
-                  onClick={() => setMetric('sessions')}
+                  onClick={() => setMetric('organicUsers')}
                   className={`text-[12px] font-medium px-3 py-1.5 rounded-md transition-all duration-150 ${
-                    metric === 'sessions' ? 'bg-surface-3 text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
+                    metric === 'organicUsers' ? 'bg-surface-3 text-text-primary shadow-sm' : 'text-text-tertiary hover:text-text-secondary'
                   }`}
                 >
-                  Bezoekers
+                  Organische bezoekers
                 </button>
               </div>
               <span className="text-text-tertiary text-[11px]">
-                Grafiek: 30 dagen &middot; Totalen: 365 dagen &middot; Engelse titel
+                Grafiek: 30 dagen &middot; Totalen: 365 dagen &middot; Alleen organisch zoekverkeer
               </span>
             </div>
 

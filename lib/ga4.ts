@@ -9,7 +9,7 @@ export interface GA4ArticleData {
   pagePath: string
   pageTitle: string
   pageviews: number
-  sessions: number
+  organicUsers: number
   revenue: number
   transactions: number
 }
@@ -18,7 +18,7 @@ export interface GA4DailyData {
   pagePath: string
   date: string // YYYY-MM-DD
   pageviews: number
-  sessions: number
+  organicUsers: number
   revenue: number
   transactions: number
 }
@@ -38,14 +38,24 @@ function createClient(credentials: GA4Credentials) {
   })
 }
 
+// Filter: only organic search traffic
+const ORGANIC_FILTER = {
+  filter: {
+    fieldName: 'sessionDefaultChannelGroup',
+    stringFilter: {
+      matchType: 'EXACT' as const,
+      value: 'Organic Search',
+    },
+  },
+}
+
 export async function fetchBlogArticles(
   credentials: GA4Credentials,
   propertyId: string,
 ): Promise<GA4ArticleData[]> {
   const client = createClient(credentials)
 
-  // Fetch with pagePath + pageTitle dimensions
-  const allRows: { pagePath: string; pageTitle: string; pageviews: number; sessions: number; revenue: number; transactions: number }[] = []
+  const allRows: { pagePath: string; pageTitle: string; pageviews: number; organicUsers: number; revenue: number; transactions: number }[] = []
   let offset = 0
   const pageSize = 10000
 
@@ -59,10 +69,11 @@ export async function fetchBlogArticles(
       ],
       metrics: [
         { name: 'screenPageViews' },
-        { name: 'sessions' },
+        { name: 'totalUsers' },
         { name: 'purchaseRevenue' },
         { name: 'transactions' },
       ],
+      dimensionFilter: ORGANIC_FILTER,
       limit: pageSize,
       offset,
     })
@@ -74,7 +85,7 @@ export async function fetchBlogArticles(
         pagePath: row.dimensionValues?.[0]?.value || '',
         pageTitle: row.dimensionValues?.[1]?.value || '',
         pageviews: parseInt(row.metricValues?.[0]?.value || '0', 10),
-        sessions: parseInt(row.metricValues?.[1]?.value || '0', 10),
+        organicUsers: parseInt(row.metricValues?.[1]?.value || '0', 10),
         revenue: parseFloat(row.metricValues?.[2]?.value || '0'),
         transactions: parseInt(row.metricValues?.[3]?.value || '0', 10),
       })
@@ -90,7 +101,7 @@ export async function fetchBlogArticles(
     const existing = byPath.get(row.pagePath)
     if (existing) {
       existing.pageviews += row.pageviews
-      existing.sessions += row.sessions
+      existing.organicUsers += row.organicUsers
       existing.revenue += row.revenue
       existing.transactions += row.transactions
       if (row.pageviews > 0 && row.pageviews >= existing.pageviews - row.pageviews) {
@@ -123,10 +134,11 @@ export async function fetchBlogArticlesDaily(
       ],
       metrics: [
         { name: 'screenPageViews' },
-        { name: 'sessions' },
+        { name: 'totalUsers' },
         { name: 'purchaseRevenue' },
         { name: 'transactions' },
       ],
+      dimensionFilter: ORGANIC_FILTER,
       limit: pageSize,
       offset,
     })
@@ -140,7 +152,7 @@ export async function fetchBlogArticlesDaily(
         pagePath: row.dimensionValues?.[0]?.value || '',
         date,
         pageviews: parseInt(row.metricValues?.[0]?.value || '0', 10),
-        sessions: parseInt(row.metricValues?.[1]?.value || '0', 10),
+        organicUsers: parseInt(row.metricValues?.[1]?.value || '0', 10),
         revenue: parseFloat(row.metricValues?.[2]?.value || '0'),
         transactions: parseInt(row.metricValues?.[3]?.value || '0', 10),
       })
