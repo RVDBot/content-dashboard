@@ -80,7 +80,7 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
   }
 
   const credentials = { clientEmail, privateKey }
-  const properties = db.prepare('SELECT * FROM ga4_properties WHERE search_console_url != ""').all() as GA4Property[]
+  const properties = db.prepare("SELECT * FROM ga4_properties WHERE search_console_url != ''").all() as GA4Property[]
 
   if (properties.length === 0) {
     throw new Error('Geen properties met Search Console URL geconfigureerd')
