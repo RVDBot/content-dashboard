@@ -358,15 +358,15 @@ export default function OpportunitiesPage() {
                         </div>
                       </div>
                       <div className="shrink-0 text-right space-y-1">
-                        <Tip tip="Verwachte maandelijkse omzet = verwacht verkeer × conversieratio × gem. orderwaarde (berekend uit bestaande GA4 data)">
+                        <Tip tip="Verwachte maandelijkse omzet = verwacht verkeer × gem. omzet per organische bezoeker (uit bestaande GA4 data)">
                           <p className="text-[16px] font-bold text-text-primary tabular-nums leading-none">
                             {formatCurrency(opp.expected_revenue)}<span className="text-text-tertiary text-[11px] font-normal">/mnd</span>
                           </p>
                         </Tip>
                         <p className="text-text-tertiary text-[11px] tabular-nums">
-                          <Tip tip="Maandelijkse impressies in Google zoekresultaten (uit Search Console, laatste 3 maanden)">{formatNumber(opp.monthly_impressions)} imp</Tip>
+                          <Tip tip="Maandelijks zoekvolume (Keyword Planner of Search Console impressies als fallback)">{formatNumber(opp.estimated_volume)} vol</Tip>
                           {' · '}
-                          <Tip tip="Verwacht maandelijks verkeer = impressies × geschatte CTR bij positie 5 (~5%)">{formatNumber(opp.expected_traffic)} bezoekers</Tip>
+                          <Tip tip="Verwacht maandelijks verkeer = zoekvolume × 5% CTR bij positie 5">{formatNumber(opp.expected_traffic)} bezoekers</Tip>
                         </p>
                         <select
                           value={opp.status}

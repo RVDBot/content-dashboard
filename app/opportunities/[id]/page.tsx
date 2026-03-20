@@ -191,19 +191,19 @@ export default function OpportunityDetail({ params }: { params: Promise<{ id: st
 
         {/* Metrics grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <Tip tip="Totaal maandelijkse impressies van alle doelzoekwoorden samen in Google zoekresultaten (Search Console data, 3 maanden gemiddeld). Bij 0: geen Search Console data gevonden voor deze keywords.">
+          <Tip tip="Maandelijks zoekvolume van alle doelzoekwoorden (Google Ads Keyword Planner indien geconfigureerd, anders Search Console impressies als proxy).">
             <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
-              <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Impressies/mnd</p>
-              <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.monthly_impressions)}</p>
+              <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Zoekvolume/mnd</p>
+              <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.estimated_volume)}</p>
             </div>
           </Tip>
-          <Tip tip="Geschat maandelijks verkeer als dit artikel positie 5 bereikt. Berekening: impressies × 5% CTR. Bij 0 impressies wordt 50 als schatting gebruikt.">
+          <Tip tip="Geschat maandelijks verkeer bij positie 5. Berekening: zoekvolume × 5% CTR.">
             <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Verwacht verkeer</p>
               <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.expected_traffic)}</p>
             </div>
           </Tip>
-          <Tip tip="Geschatte maandelijkse omzet. Berekening: verwacht verkeer × conversieratio × gem. orderwaarde (beide uit bestaande GA4 data van je artikelen).">
+          <Tip tip="Geschatte maandelijkse omzet. Berekening: verwacht verkeer × gemiddelde omzet per organische bezoeker (berekend uit bestaande GA4 artikeldata).">
             <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
               <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Verwachte omzet</p>
               <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatCurrency(opp.expected_revenue)}/mnd</p>

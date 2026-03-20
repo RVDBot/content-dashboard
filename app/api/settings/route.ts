@@ -12,9 +12,14 @@ const SETTINGS_KEYS = [
   'refresh_frequency',
   'anthropic_api_key',
   'ai_model',
+  'gads_developer_token',
+  'gads_client_id',
+  'gads_client_secret',
+  'gads_refresh_token',
+  'gads_customer_id',
 ]
 
-const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret', 'anthropic_api_key']
+const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret', 'anthropic_api_key', 'gads_client_secret', 'gads_refresh_token']
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied

@@ -92,6 +92,11 @@ export default function Settings({ onClose }: Props) {
     refresh_frequency: 'weekly',
     anthropic_api_key: '',
     ai_model: 'claude-haiku-4-5-20251001',
+    gads_developer_token: '',
+    gads_client_id: '',
+    gads_client_secret: '',
+    gads_refresh_token: '',
+    gads_customer_id: '',
   })
   const [properties, setProperties] = useState<(GA4PropertyForm & { id: number })[]>([])
   const [editingProp, setEditingProp] = useState<GA4PropertyForm | null>(null)
@@ -99,8 +104,12 @@ export default function Settings({ onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showWcSecret, setShowWcSecret] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'ai' | 'keywords' | 'logs'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'ai' | 'gads' | 'keywords' | 'logs'>('dashboard')
   const [showAnthropicKey, setShowAnthropicKey] = useState(false)
+  const [showGadsSecret, setShowGadsSecret] = useState(false)
+  const [gadsAuthUrl, setGadsAuthUrl] = useState<string | null>(null)
+  const [gadsCode, setGadsCode] = useState('')
+  const [gadsAuthStatus, setGadsAuthStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
   const [tokenUsage, setTokenUsage] = useState<{ total_input: number; total_output: number; by_action: Record<string, { input: number; output: number; count: number }> } | null>(null)
   const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
@@ -238,6 +247,7 @@ export default function Settings({ onClose }: Props) {
                 { id: 'ga4' as const, label: 'Analytics' },
                 { id: 'woocommerce' as const, label: 'WooCommerce' },
                 { id: 'ai' as const, label: 'AI' },
+                { id: 'gads' as const, label: 'Google Ads' },
                 { id: 'keywords' as const, label: 'Keywords' },
                 { id: 'logs' as const, label: 'Logboek' },
               ].map(tab => (
@@ -629,6 +639,147 @@ export default function Settings({ onClose }: Props) {
                       </div>
                     ) : (
                       <p className="text-text-tertiary text-[13px]">Laden...</p>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'gads' && (
+                <>
+                  <div>
+                    <h3 className="text-text-primary text-[13px] font-semibold mb-1">Google Ads Keyword Planner</h3>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed">
+                      Haalt echte maandelijkse zoekvolumes op voor doelzoekwoorden. Vereist een Google Ads account (gratis, geen advertenties nodig).
+                    </p>
+                  </div>
+
+                  <Field
+                    label="Developer Token"
+                    id="gads_developer_token"
+                    value={settings.gads_developer_token}
+                    onChange={v => setSettings(p => ({ ...p, gads_developer_token: v }))}
+                    placeholder="Uit Google Ads → Tools → API Center"
+                  />
+                  <Field
+                    label="Customer ID"
+                    id="gads_customer_id"
+                    value={settings.gads_customer_id}
+                    onChange={v => setSettings(p => ({ ...p, gads_customer_id: v }))}
+                    placeholder="123-456-7890"
+                  />
+
+                  <div className="border-t border-border-subtle pt-5">
+                    <h4 className="text-text-primary text-[13px] font-semibold mb-1">OAuth2 Credentials</h4>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed mb-4">
+                      Maak OAuth2 credentials aan in Google Cloud Console (zelfde project als GA4). Kies &quot;Desktop app&quot; als type.
+                    </p>
+
+                    <div className="space-y-4">
+                      <Field
+                        label="Client ID"
+                        id="gads_client_id"
+                        value={settings.gads_client_id}
+                        onChange={v => setSettings(p => ({ ...p, gads_client_id: v }))}
+                        placeholder="...apps.googleusercontent.com"
+                      />
+                      <Field
+                        label="Client Secret"
+                        id="gads_client_secret"
+                        value={settings.gads_client_secret}
+                        onChange={v => setSettings(p => ({ ...p, gads_client_secret: v }))}
+                        show={showGadsSecret}
+                        onToggle={() => setShowGadsSecret(!showGadsSecret)}
+                        placeholder="GOCSPX-..."
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border-t border-border-subtle pt-5">
+                    <h4 className="text-text-primary text-[13px] font-semibold mb-1">Autorisatie</h4>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed mb-3">
+                      {settings.gads_refresh_token && settings.gads_refresh_token !== '••••••••'
+                        ? 'Google Ads is geautoriseerd. Je kunt opnieuw autoriseren als dat nodig is.'
+                        : 'Sla eerst de Client ID en Secret op, klik dan op "Autoriseren" om toegang te verlenen.'}
+                    </p>
+
+                    {settings.gads_refresh_token && settings.gads_refresh_token !== '••••••••' ? (
+                      <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-success/10 flex items-center justify-center">
+                          <svg className="w-3.5 h-3.5 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                            <path d="M3 8.5l3.5 3.5 6.5-8" />
+                          </svg>
+                        </div>
+                        <span className="text-text-primary text-[13px] font-medium">Google Ads geautoriseerd</span>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <button
+                          onClick={async () => {
+                            // First save settings so the API can use them
+                            await fetch('/api/settings', {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify(settings),
+                            })
+                            const res = await fetch('/api/google-ads-auth')
+                            const data = await res.json()
+                            if (data.url) {
+                              setGadsAuthUrl(data.url)
+                              window.open(data.url, '_blank')
+                            } else {
+                              alert(data.error || 'Kon auth URL niet genereren')
+                            }
+                          }}
+                          className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-4 py-2 rounded-xl transition-colors duration-150"
+                        >
+                          Autoriseren
+                        </button>
+
+                        {gadsAuthUrl && (
+                          <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle space-y-3">
+                            <p className="text-text-secondary text-[12px]">
+                              Plak de autorisatiecode die Google toont na het verlenen van toegang:
+                            </p>
+                            <div className="flex gap-2">
+                              <input
+                                value={gadsCode}
+                                onChange={e => setGadsCode(e.target.value)}
+                                placeholder="4/0Axxxxxxx..."
+                                className="flex-1 bg-surface-1 text-text-primary text-[13px] px-3 py-2 rounded-lg outline-none border border-border hover:border-text-tertiary focus:border-accent placeholder:text-text-tertiary font-mono transition-colors duration-150"
+                              />
+                              <button
+                                onClick={async () => {
+                                  if (!gadsCode.trim()) return
+                                  setGadsAuthStatus('loading')
+                                  try {
+                                    const res = await fetch('/api/google-ads-auth', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ code: gadsCode.trim() }),
+                                    })
+                                    const data = await res.json()
+                                    if (data.ok) {
+                                      setGadsAuthStatus('success')
+                                      setSettings(p => ({ ...p, gads_refresh_token: '••••••••' }))
+                                      setGadsAuthUrl(null)
+                                      setGadsCode('')
+                                    } else {
+                                      setGadsAuthStatus('error')
+                                      alert(data.error || 'Autorisatie mislukt')
+                                    }
+                                  } catch {
+                                    setGadsAuthStatus('error')
+                                  }
+                                }}
+                                disabled={gadsAuthStatus === 'loading'}
+                                className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-3 py-2 rounded-lg transition-colors duration-150 disabled:opacity-50 shrink-0"
+                              >
+                                {gadsAuthStatus === 'loading' ? 'Bezig...' : 'Bevestigen'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </>

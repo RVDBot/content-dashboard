@@ -153,6 +153,13 @@ function initSchema(db: Database.Database) {
       PRIMARY KEY(keyword, language)
     );
 
+    CREATE TABLE IF NOT EXISTS keyword_volumes (
+      keyword TEXT PRIMARY KEY,
+      avg_monthly_searches INTEGER NOT NULL DEFAULT 0,
+      competition TEXT NOT NULL DEFAULT 'UNSPECIFIED',
+      fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
   `)
 }
 
