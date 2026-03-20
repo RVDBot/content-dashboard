@@ -763,25 +763,53 @@ export default function Settings({ onClose }: Props) {
                   <div className="border-t border-border-subtle pt-5">
                     <h4 className="text-text-primary text-[13px] font-semibold mb-1">Autorisatie</h4>
                     <p className="text-text-tertiary text-[11px] leading-relaxed mb-3">
-                      {settings.gads_refresh_token && settings.gads_refresh_token !== '••••••••'
+                      {settings.gads_refresh_token && settings.gads_refresh_token === '••••••••'
                         ? 'Google Ads is geautoriseerd. Je kunt opnieuw autoriseren als dat nodig is.'
-                        : 'Sla eerst de Client ID en Secret op, klik dan op "Autoriseren" om toegang te verlenen.'}
+                        : 'Sla eerst alle instellingen op, klik dan op "Autoriseren". Je wordt na autorisatie automatisch teruggestuurd.'}
                     </p>
 
-                    {settings.gads_refresh_token && settings.gads_refresh_token !== '••••••••' ? (
-                      <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-success/10 flex items-center justify-center">
-                          <svg className="w-3.5 h-3.5 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                            <path d="M3 8.5l3.5 3.5 6.5-8" />
-                          </svg>
+                    {settings.gads_refresh_token === '••••••••' ? (
+                      <div className="space-y-3">
+                        <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-success/10 flex items-center justify-center">
+                              <svg className="w-3.5 h-3.5 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                                <path d="M3 8.5l3.5 3.5 6.5-8" />
+                              </svg>
+                            </div>
+                            <span className="text-text-primary text-[13px] font-medium">Google Ads geautoriseerd</span>
+                          </div>
+                          <button
+                            onClick={async () => {
+                              await fetch('/api/settings', {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(settings),
+                              })
+                              const res = await fetch('/api/google-ads-auth')
+                              const data = await res.json()
+                              if (data.url) {
+                                window.location.href = data.url
+                              } else {
+                                alert(data.error || 'Kon auth URL niet genereren')
+                              }
+                            }}
+                            className="text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors"
+                          >
+                            Opnieuw autoriseren
+                          </button>
                         </div>
-                        <span className="text-text-primary text-[13px] font-medium">Google Ads geautoriseerd</span>
                       </div>
                     ) : (
                       <div className="space-y-3">
+                        {gadsAuthUrl && (
+                          <div className="bg-surface-0 rounded-xl p-3 border border-border-subtle">
+                            <p className="text-text-tertiary text-[11px] mb-1">Voeg deze redirect URI toe in Google Cloud Console bij je OAuth2 Client:</p>
+                            <code className="text-text-primary text-[11px] font-mono bg-surface-2 px-2 py-1 rounded-md block break-all">{gadsAuthUrl}</code>
+                          </div>
+                        )}
                         <button
                           onClick={async () => {
-                            // First save settings so the API can use them
                             await fetch('/api/settings', {
                               method: 'PUT',
                               headers: { 'Content-Type': 'application/json' },
@@ -790,8 +818,8 @@ export default function Settings({ onClose }: Props) {
                             const res = await fetch('/api/google-ads-auth')
                             const data = await res.json()
                             if (data.url) {
-                              setGadsAuthUrl(data.url)
-                              window.open(data.url, '_blank')
+                              setGadsAuthUrl(data.redirectUri)
+                              window.location.href = data.url
                             } else {
                               alert(data.error || 'Kon auth URL niet genereren')
                             }
@@ -800,51 +828,6 @@ export default function Settings({ onClose }: Props) {
                         >
                           Autoriseren
                         </button>
-
-                        {gadsAuthUrl && (
-                          <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle space-y-3">
-                            <p className="text-text-secondary text-[12px]">
-                              Plak de autorisatiecode die Google toont na het verlenen van toegang:
-                            </p>
-                            <div className="flex gap-2">
-                              <input
-                                value={gadsCode}
-                                onChange={e => setGadsCode(e.target.value)}
-                                placeholder="4/0Axxxxxxx..."
-                                className="flex-1 bg-surface-1 text-text-primary text-[13px] px-3 py-2 rounded-lg outline-none border border-border hover:border-text-tertiary focus:border-accent placeholder:text-text-tertiary font-mono transition-colors duration-150"
-                              />
-                              <button
-                                onClick={async () => {
-                                  if (!gadsCode.trim()) return
-                                  setGadsAuthStatus('loading')
-                                  try {
-                                    const res = await fetch('/api/google-ads-auth', {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ code: gadsCode.trim() }),
-                                    })
-                                    const data = await res.json()
-                                    if (data.ok) {
-                                      setGadsAuthStatus('success')
-                                      setSettings(p => ({ ...p, gads_refresh_token: '••••••••' }))
-                                      setGadsAuthUrl(null)
-                                      setGadsCode('')
-                                    } else {
-                                      setGadsAuthStatus('error')
-                                      alert(data.error || 'Autorisatie mislukt')
-                                    }
-                                  } catch {
-                                    setGadsAuthStatus('error')
-                                  }
-                                }}
-                                disabled={gadsAuthStatus === 'loading'}
-                                className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-3 py-2 rounded-lg transition-colors duration-150 disabled:opacity-50 shrink-0"
-                              >
-                                {gadsAuthStatus === 'loading' ? 'Bezig...' : 'Bevestigen'}
-                              </button>
-                            </div>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>

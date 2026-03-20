@@ -142,10 +142,10 @@ export async function fetchKeywordVolumes(
   return results
 }
 
-export function getAuthUrl(clientId: string): string {
+export function getAuthUrl(clientId: string, redirectUri: string): string {
   const params = new URLSearchParams({
     client_id: clientId,
-    redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
+    redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'https://www.googleapis.com/auth/adwords',
     access_type: 'offline',
@@ -158,6 +158,7 @@ export async function exchangeCodeForToken(
   clientId: string,
   clientSecret: string,
   code: string,
+  redirectUri: string,
 ): Promise<string> {
   const res = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
@@ -167,7 +168,7 @@ export async function exchangeCodeForToken(
       client_secret: clientSecret,
       code,
       grant_type: 'authorization_code',
-      redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
+      redirect_uri: redirectUri,
     }),
   })
 

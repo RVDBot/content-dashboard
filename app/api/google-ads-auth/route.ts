@@ -14,6 +14,12 @@ function setSetting(key: string, value: string) {
     .run(key, value, value)
 }
 
+function getRedirectUri(req: NextRequest): string {
+  const proto = req.headers.get('x-forwarded-proto') || 'http'
+  const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || 'localhost:3000'
+  return `${proto}://${host}/api/google-ads-auth/callback`
+}
+
 // GET: generate auth URL
 export async function GET(req: NextRequest) {
   const authError = requireAuth(req)
@@ -24,7 +30,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Client ID niet ingesteld' }, { status: 400 })
   }
 
-  return NextResponse.json({ url: getAuthUrl(clientId) })
+  const redirectUri = getRedirectUri(req)
+  return NextResponse.json({ url: getAuthUrl(clientId, redirectUri), redirectUri })
 }
 
 // POST: exchange code for refresh token
@@ -44,8 +51,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Client ID en Secret moeten eerst ingesteld worden' }, { status: 400 })
   }
 
+  const redirectUri = getRedirectUri(req)
+
   try {
-    const refreshToken = await exchangeCodeForToken(clientId, clientSecret, code)
+    const refreshToken = await exchangeCodeForToken(clientId, clientSecret, code, redirectUri)
     setSetting('gads_refresh_token', refreshToken)
     return NextResponse.json({ ok: true })
   } catch (e) {

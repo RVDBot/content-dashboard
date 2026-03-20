@@ -8,6 +8,7 @@ export function middleware(req: NextRequest) {
     pathname.startsWith('/login') ||
     pathname.startsWith('/api/auth') ||
     pathname.startsWith('/api/cron') ||
+    pathname.startsWith('/api/google-ads-auth/callback') ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon')
   ) {
