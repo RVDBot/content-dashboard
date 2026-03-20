@@ -38,6 +38,7 @@ function createClient(credentials: GA4Credentials) {
   })
 }
 
+// Only organic search sessions
 const ORGANIC_FILTER = {
   filter: {
     fieldName: 'sessionDefaultChannelGroup',
@@ -48,6 +49,8 @@ const ORGANIC_FILTER = {
   },
 }
 
+type Row = { dimensionValues?: ({ value?: string | null } | null)[] | null; metricValues?: ({ value?: string | null } | null)[] | null }
+
 async function paginatedReport(
   client: BetaAnalyticsDataClient,
   propertyId: string,
@@ -57,8 +60,8 @@ async function paginatedReport(
     metrics: { name: string }[]
     dimensionFilter?: object
   },
-) {
-  const allRows: { dimensionValues?: ({ value?: string | null } | null)[] | null; metricValues?: ({ value?: string | null } | null)[] | null }[] = []
+): Promise<Row[]> {
+  const allRows: Row[] = []
   let offset = 0
   const pageSize = 10000
 
@@ -79,26 +82,47 @@ async function paginatedReport(
   return allRows
 }
 
+function dimVal(row: Row, idx: number): string {
+  return row.dimensionValues?.[idx]?.value || ''
+}
+
+function metricInt(row: Row, idx: number): number {
+  return parseInt(row.metricValues?.[idx]?.value || '0', 10)
+}
+
+function metricFloat(row: Row, idx: number): number {
+  return parseFloat(row.metricValues?.[idx]?.value || '0')
+}
+
+function formatDate(raw: string): string {
+  return raw.length === 8 ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}` : raw
+}
+
 export async function fetchBlogArticles(
   credentials: GA4Credentials,
   propertyId: string,
 ): Promise<GA4ArticleData[]> {
   const client = createClient(credentials)
   const dateRanges = [{ startDate: '365daysAgo', endDate: 'today' }]
-  const dimensions = [{ name: 'pagePath' }, { name: 'pageTitle' }]
 
-  // Two queries in parallel:
-  // 1. All traffic: revenue, pageviews, transactions (no channel filter)
-  // 2. Organic only: unique users
-  const [allTrafficRows, organicRows] = await Promise.all([
+  // Three queries in parallel:
+  // 1. pagePath + pageTitle: pageviews (all traffic, for title resolution)
+  // 2. landingPage: revenue + transactions (organic only, landing page = blog article)
+  // 3. pagePath: totalUsers (organic only)
+  const [pageviewRows, revenueRows, organicUserRows] = await Promise.all([
     paginatedReport(client, propertyId, {
       dateRanges,
-      dimensions,
+      dimensions: [{ name: 'pagePath' }, { name: 'pageTitle' }],
+      metrics: [{ name: 'screenPageViews' }],
+    }),
+    paginatedReport(client, propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'landingPage' }],
       metrics: [
-        { name: 'screenPageViews' },
         { name: 'purchaseRevenue' },
         { name: 'transactions' },
       ],
+      dimensionFilter: ORGANIC_FILTER,
     }),
     paginatedReport(client, propertyId, {
       dateRanges,
@@ -108,57 +132,65 @@ export async function fetchBlogArticles(
     }),
   ])
 
-  // Build organic users map
-  const organicByPath = new Map<string, number>()
-  for (const row of organicRows) {
-    const path = row.dimensionValues?.[0]?.value || ''
-    const users = parseInt(row.metricValues?.[0]?.value || '0', 10)
-    organicByPath.set(path, (organicByPath.get(path) || 0) + users)
+  // Build revenue map from landingPage (organic sessions starting on this page)
+  const revenueByPath = new Map<string, { revenue: number; transactions: number }>()
+  for (const row of revenueRows) {
+    const path = dimVal(row, 0)
+    const revenue = metricFloat(row, 0)
+    const transactions = metricInt(row, 1)
+    const existing = revenueByPath.get(path)
+    if (existing) {
+      existing.revenue += revenue
+      existing.transactions += transactions
+    } else {
+      revenueByPath.set(path, { revenue, transactions })
+    }
   }
 
-  // Aggregate all-traffic by pagePath: sum metrics, keep title from row with most pageviews
+  // Build organic users map
+  const organicByPath = new Map<string, number>()
+  for (const row of organicUserRows) {
+    const path = dimVal(row, 0)
+    organicByPath.set(path, (organicByPath.get(path) || 0) + metricInt(row, 0))
+  }
+
+  // Build articles from pageview data, aggregate by pagePath
   const byPath = new Map<string, GA4ArticleData>()
-  for (const row of allTrafficRows) {
-    const pagePath = row.dimensionValues?.[0]?.value || ''
-    const pageTitle = row.dimensionValues?.[1]?.value || ''
-    const pageviews = parseInt(row.metricValues?.[0]?.value || '0', 10)
-    const revenue = parseFloat(row.metricValues?.[1]?.value || '0')
-    const transactions = parseInt(row.metricValues?.[2]?.value || '0', 10)
+  for (const row of pageviewRows) {
+    const pagePath = dimVal(row, 0)
+    const pageTitle = dimVal(row, 1)
+    const pageviews = metricInt(row, 0)
 
     const existing = byPath.get(pagePath)
     if (existing) {
       existing.pageviews += pageviews
-      existing.revenue += revenue
-      existing.transactions += transactions
       if (pageviews > 0 && pageviews >= existing.pageviews - pageviews) {
         existing.pageTitle = pageTitle
       }
     } else {
+      const rev = revenueByPath.get(pagePath)
       byPath.set(pagePath, {
         pagePath,
         pageTitle,
         pageviews,
-        organicUsers: 0,
-        revenue,
-        transactions,
+        organicUsers: organicByPath.get(pagePath) || 0,
+        revenue: rev?.revenue || 0,
+        transactions: rev?.transactions || 0,
       })
     }
   }
 
-  // Merge organic users into results
-  for (const [path, users] of organicByPath) {
-    const article = byPath.get(path)
-    if (article) {
-      article.organicUsers = users
-    } else {
-      // Article only has organic traffic, no other traffic
+  // Add pages that only have organic/revenue data but no pageviews
+  for (const path of new Set([...organicByPath.keys(), ...revenueByPath.keys()])) {
+    if (!byPath.has(path)) {
+      const rev = revenueByPath.get(path)
       byPath.set(path, {
         pagePath: path,
         pageTitle: '',
         pageviews: 0,
-        organicUsers: users,
-        revenue: 0,
-        transactions: 0,
+        organicUsers: organicByPath.get(path) || 0,
+        revenue: rev?.revenue || 0,
+        transactions: rev?.transactions || 0,
       })
     }
   }
@@ -172,79 +204,96 @@ export async function fetchBlogArticlesDaily(
 ): Promise<GA4DailyData[]> {
   const client = createClient(credentials)
   const dateRanges = [{ startDate: '30daysAgo', endDate: 'today' }]
-  const dimensions = [{ name: 'pagePath' }, { name: 'date' }]
 
-  // Two queries in parallel:
-  // 1. All traffic: revenue, pageviews, transactions
-  // 2. Organic only: unique users
-  const [allTrafficRows, organicRows] = await Promise.all([
+  // Three queries in parallel:
+  // 1. pagePath + date: pageviews (all traffic)
+  // 2. landingPage + date: revenue + transactions (organic only)
+  // 3. pagePath + date: totalUsers (organic only)
+  const [pageviewRows, revenueRows, organicUserRows] = await Promise.all([
     paginatedReport(client, propertyId, {
       dateRanges,
-      dimensions,
-      metrics: [
-        { name: 'screenPageViews' },
-        { name: 'purchaseRevenue' },
-        { name: 'transactions' },
-      ],
+      dimensions: [{ name: 'pagePath' }, { name: 'date' }],
+      metrics: [{ name: 'screenPageViews' }],
     }),
     paginatedReport(client, propertyId, {
       dateRanges,
-      dimensions,
+      dimensions: [{ name: 'landingPage' }, { name: 'date' }],
+      metrics: [
+        { name: 'purchaseRevenue' },
+        { name: 'transactions' },
+      ],
+      dimensionFilter: ORGANIC_FILTER,
+    }),
+    paginatedReport(client, propertyId, {
+      dateRanges,
+      dimensions: [{ name: 'pagePath' }, { name: 'date' }],
       metrics: [{ name: 'totalUsers' }],
       dimensionFilter: ORGANIC_FILTER,
     }),
   ])
 
-  // Build organic users map: path+date → users
-  const organicByKey = new Map<string, number>()
-  for (const row of organicRows) {
-    const path = row.dimensionValues?.[0]?.value || ''
-    const rawDate = row.dimensionValues?.[1]?.value || ''
-    const date = rawDate.length === 8 ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}` : rawDate
+  // Build revenue map: path|date → { revenue, transactions }
+  const revenueByKey = new Map<string, { revenue: number; transactions: number }>()
+  for (const row of revenueRows) {
+    const path = dimVal(row, 0)
+    const date = formatDate(dimVal(row, 1))
     const key = `${path}|${date}`
-    const users = parseInt(row.metricValues?.[0]?.value || '0', 10)
-    organicByKey.set(key, (organicByKey.get(key) || 0) + users)
+    const revenue = metricFloat(row, 0)
+    const transactions = metricInt(row, 1)
+    const existing = revenueByKey.get(key)
+    if (existing) {
+      existing.revenue += revenue
+      existing.transactions += transactions
+    } else {
+      revenueByKey.set(key, { revenue, transactions })
+    }
   }
 
-  // Build results from all-traffic data, merge organic users
+  // Build organic users map: path|date → users
+  const organicByKey = new Map<string, number>()
+  for (const row of organicUserRows) {
+    const path = dimVal(row, 0)
+    const date = formatDate(dimVal(row, 1))
+    const key = `${path}|${date}`
+    organicByKey.set(key, (organicByKey.get(key) || 0) + metricInt(row, 0))
+  }
+
+  // Build daily data from pageviews, merge revenue + organic users
   const byKey = new Map<string, GA4DailyData>()
-  for (const row of allTrafficRows) {
-    const pagePath = row.dimensionValues?.[0]?.value || ''
-    const rawDate = row.dimensionValues?.[1]?.value || ''
-    const date = rawDate.length === 8 ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}` : rawDate
+  for (const row of pageviewRows) {
+    const pagePath = dimVal(row, 0)
+    const date = formatDate(dimVal(row, 1))
     const key = `${pagePath}|${date}`
-    const pageviews = parseInt(row.metricValues?.[0]?.value || '0', 10)
-    const revenue = parseFloat(row.metricValues?.[1]?.value || '0')
-    const transactions = parseInt(row.metricValues?.[2]?.value || '0', 10)
+    const pageviews = metricInt(row, 0)
 
     const existing = byKey.get(key)
     if (existing) {
       existing.pageviews += pageviews
-      existing.revenue += revenue
-      existing.transactions += transactions
     } else {
+      const rev = revenueByKey.get(key)
       byKey.set(key, {
         pagePath,
         date,
         pageviews,
         organicUsers: organicByKey.get(key) || 0,
-        revenue,
-        transactions,
+        revenue: rev?.revenue || 0,
+        transactions: rev?.transactions || 0,
       })
     }
   }
 
-  // Add entries that only have organic traffic
-  for (const [key, users] of organicByKey) {
+  // Add entries with only organic/revenue data
+  for (const key of new Set([...organicByKey.keys(), ...revenueByKey.keys()])) {
     if (!byKey.has(key)) {
       const [pagePath, date] = key.split('|')
+      const rev = revenueByKey.get(key)
       byKey.set(key, {
         pagePath,
         date,
         pageviews: 0,
-        organicUsers: users,
-        revenue: 0,
-        transactions: 0,
+        organicUsers: organicByKey.get(key) || 0,
+        revenue: rev?.revenue || 0,
+        transactions: rev?.transactions || 0,
       })
     }
   }
