@@ -131,6 +131,8 @@ function initSchema(db: Database.Database) {
       fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY(keyword, language)
     );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_keyword ON opportunities(keyword);
   `)
 }
 

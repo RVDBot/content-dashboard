@@ -208,9 +208,6 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
       updated_at = CURRENT_TIMESTAMP
   `)
 
-  // Add UNIQUE constraint on keyword if not exists (for upsert)
-  try { db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_keyword ON opportunities(keyword)`) } catch {}
-
   let count = 0
   const insertOpps = db.transaction((opps: OpportunityData[]) => {
     for (const opp of opps) {
