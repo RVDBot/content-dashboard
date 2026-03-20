@@ -87,6 +87,13 @@ function dimVal(row: Row, idx: number): string {
   return row.dimensionValues?.[idx]?.value || ''
 }
 
+/** Normalize path: strip query string and trailing slash (keep root /) */
+function normPath(raw: string): string {
+  let p = raw.split('?')[0]
+  if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1)
+  return p
+}
+
 function metricInt(row: Row, idx: number): number {
   return parseInt(row.metricValues?.[idx]?.value || '0', 10)
 }
@@ -134,11 +141,9 @@ export async function fetchBlogArticles(
   ])
 
   // Build revenue map from landingPage (organic sessions starting on this page)
-  // Strip query strings from landingPage — GA4 may include ?gclid= etc.
   const revenueByPath = new Map<string, { revenue: number; transactions: number }>()
   for (const row of revenueRows) {
-    const rawPath = dimVal(row, 0)
-    const path = rawPath.split('?')[0]
+    const path = normPath(dimVal(row, 0))
     const revenue = metricFloat(row, 0)
     const transactions = metricInt(row, 1)
     const existing = revenueByPath.get(path)
@@ -165,7 +170,7 @@ export async function fetchBlogArticles(
   // Build organic users map
   const organicByPath = new Map<string, number>()
   for (const row of organicUserRows) {
-    const path = dimVal(row, 0)
+    const path = normPath(dimVal(row, 0))
     organicByPath.set(path, (organicByPath.get(path) || 0) + metricInt(row, 0))
   }
 
@@ -173,7 +178,7 @@ export async function fetchBlogArticles(
   // First pass: aggregate pageviews and pick best title
   const byPath = new Map<string, GA4ArticleData>()
   for (const row of pageviewRows) {
-    const pagePath = dimVal(row, 0)
+    const pagePath = normPath(dimVal(row, 0))
     const pageTitle = dimVal(row, 1)
     const pageviews = metricInt(row, 0)
 
@@ -259,10 +264,9 @@ export async function fetchBlogArticlesDaily(
   ])
 
   // Build revenue map: path|date → { revenue, transactions }
-  // Strip query strings from landingPage
   const revenueByKey = new Map<string, { revenue: number; transactions: number }>()
   for (const row of revenueRows) {
-    const path = dimVal(row, 0).split('?')[0]
+    const path = normPath(dimVal(row, 0))
     const date = formatDate(dimVal(row, 1))
     const key = `${path}|${date}`
     const revenue = metricFloat(row, 0)
@@ -279,7 +283,7 @@ export async function fetchBlogArticlesDaily(
   // Build organic users map: path|date → users
   const organicByKey = new Map<string, number>()
   for (const row of organicUserRows) {
-    const path = dimVal(row, 0)
+    const path = normPath(dimVal(row, 0))
     const date = formatDate(dimVal(row, 1))
     const key = `${path}|${date}`
     organicByKey.set(key, (organicByKey.get(key) || 0) + metricInt(row, 0))
@@ -288,7 +292,7 @@ export async function fetchBlogArticlesDaily(
   // Build daily data from pageviews, then merge revenue + organic users
   const byKey = new Map<string, GA4DailyData>()
   for (const row of pageviewRows) {
-    const pagePath = dimVal(row, 0)
+    const pagePath = normPath(dimVal(row, 0))
     const date = formatDate(dimVal(row, 1))
     const key = `${pagePath}|${date}`
     const pageviews = metricInt(row, 0)
