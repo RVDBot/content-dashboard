@@ -78,6 +78,15 @@ function initSchema(db: Database.Database) {
   try { db.exec(`ALTER TABLE articles ADD COLUMN organic_users INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE article_daily ADD COLUMN organic_users INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { db.exec(`ALTER TABLE ga4_properties ADD COLUMN search_console_url TEXT NOT NULL DEFAULT ''`) } catch {}
+  // Deduplicate opportunities and add unique index for existing databases
+  try {
+    db.exec(`
+      DELETE FROM opportunities WHERE id NOT IN (
+        SELECT MIN(id) FROM opportunities GROUP BY keyword
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_keyword ON opportunities(keyword);
+    `)
+  } catch {}
 
   // Content opportunity tables
   db.exec(`
@@ -96,7 +105,7 @@ function initSchema(db: Database.Database) {
 
     CREATE TABLE IF NOT EXISTS opportunities (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      keyword TEXT NOT NULL,
+      keyword TEXT NOT NULL UNIQUE,
       title_suggestion TEXT,
       description TEXT,
       source TEXT NOT NULL DEFAULT 'search_console',
@@ -132,7 +141,6 @@ function initSchema(db: Database.Database) {
       PRIMARY KEY(keyword, language)
     );
 
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_keyword ON opportunities(keyword);
   `)
 }
 
