@@ -7,4 +7,5 @@ services:
       - ./data:/app/data
     environment:
       - DATABASE_PATH=/app/data/content-dashboard.db
+      - CRON_SECRET=changeme
     restart: unless-stopped
