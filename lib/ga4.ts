@@ -88,7 +88,7 @@ function dimVal(row: Row, idx: number): string {
 }
 
 /** Normalize path: strip query string and trailing slash (keep root /) */
-function normPath(raw: string): string {
+export function normPath(raw: string): string {
   let p = raw.split('?')[0]
   if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1)
   return p

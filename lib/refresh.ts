@@ -1,5 +1,5 @@
 import { getDb, GA4Property } from '@/lib/db'
-import { fetchBlogArticles, fetchBlogArticlesDaily } from '@/lib/ga4'
+import { fetchBlogArticles, fetchBlogArticlesDaily, normPath } from '@/lib/ga4'
 import { fetchPostSitemap, fetchCategorySitemap } from '@/lib/wordpress'
 import { log } from '@/lib/logger'
 
@@ -107,11 +107,11 @@ export async function refreshData(): Promise<RefreshResult> {
     Promise.all([...categorySitemapUrls].map(url => fetchCategorySitemap(url))),
   ])
 
-  // Merge all valid post paths
+  // Merge all valid post paths (normalized)
   const validPaths = new Set<string>()
   let groups = postResults[0]?.groups || []
   for (const result of postResults) {
-    for (const p of result.validPaths) validPaths.add(p)
+    for (const p of result.validPaths) validPaths.add(normPath(p))
   }
 
   // Use the EN property's sitemap for canonical translation groups
@@ -119,10 +119,10 @@ export async function refreshData(): Promise<RefreshResult> {
   const enResult = postResults.find((_, i) => [...postSitemapUrls][i] === enSitemapUrl)
   if (enResult) groups = enResult.groups
 
-  // Merge all category paths to exclude
+  // Merge all category paths to exclude (normalized)
   const categoryPaths = new Set<string>()
   for (const catSet of categoryResults) {
-    for (const p of catSet) categoryPaths.add(p)
+    for (const p of catSet) categoryPaths.add(normPath(p))
   }
 
   // Remove category paths from valid paths
@@ -135,7 +135,7 @@ export async function refreshData(): Promise<RefreshResult> {
   groups.forEach((group, idx) => {
     for (const [, url] of Object.entries(group.urls)) {
       try {
-        pathToGroup.set(new URL(url).pathname, idx)
+        pathToGroup.set(normPath(new URL(url).pathname), idx)
       } catch { /* skip */ }
     }
   })
