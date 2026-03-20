@@ -1,6 +1,6 @@
 import { getDb, GA4Property } from '@/lib/db'
 import { fetchSearchConsoleData, SearchQueryRow } from '@/lib/search-console'
-import { fetchSuggestionsForSeedKeywords } from '@/lib/autocomplete'
+import { expandSeedKeywords, AutocompleteTopic } from '@/lib/autocomplete'
 import { log } from '@/lib/logger'
 
 // Brand fit patterns for speedropeshop.com
@@ -19,7 +19,7 @@ function getBrandFitScore(keyword: string): number {
 }
 
 function getDifficultyScore(position: number | null): number {
-  if (!position || position === 0) return 15 // No existing ranking — new content needed
+  if (!position || position === 0) return 15
   if (position <= 3) return 90
   if (position <= 10) return 70
   if (position <= 20) return 50
@@ -28,15 +28,14 @@ function getDifficultyScore(position: number | null): number {
 }
 
 function getDifficultyLabel(position: number | null): string {
-  if (!position || position === 0) return 'easy' // No competition yet
+  if (!position || position === 0) return 'easy'
   if (position <= 10) return 'hard'
   if (position <= 30) return 'medium'
   return 'easy'
 }
 
-// Estimated CTR for target position 5
 function estimatedCTR(): number {
-  return 0.05 // ~5% CTR for position 5
+  return 0.05
 }
 
 function normalizeLog(value: number, maxValue: number): number {
@@ -61,13 +60,53 @@ function getConversionMetrics(): { conversionRate: number; avgOrderValue: number
   `).get() as { total_revenue: number; total_transactions: number; total_organic_users: number } | undefined
 
   if (!result || !result.total_organic_users || !result.total_transactions) {
-    return { conversionRate: 0.02, avgOrderValue: 30 } // Defaults
+    return { conversionRate: 0.02, avgOrderValue: 30 }
   }
 
   return {
     conversionRate: result.total_transactions / result.total_organic_users,
     avgOrderValue: result.total_revenue / result.total_transactions,
   }
+}
+
+/** Generate an article title suggestion from a keyword */
+function generateTitleSuggestion(keyword: string, type: string): string {
+  const kw = keyword.trim()
+  const capitalized = kw.charAt(0).toUpperCase() + kw.slice(1)
+
+  // Already a question — use as-is
+  if (/^(how|what|why|when|where|which|can|is|are|do|does)\b/i.test(kw)) {
+    return capitalized + (kw.endsWith('?') ? '' : '?')
+  }
+
+  // "X vs Y" → comparison article
+  if (/\bvs\.?\b/i.test(kw)) {
+    return `${capitalized}: Differences, Pros & Cons`
+  }
+
+  // "X for Y" → guide
+  if (/\bfor\b/i.test(kw)) {
+    return `${capitalized}: Complete Guide`
+  }
+
+  // Question type from expansion
+  if (type === 'question') {
+    return capitalized + (kw.endsWith('?') ? '' : '?')
+  }
+
+  // Default: make it a guide/article
+  return `${capitalized}: Everything You Need to Know`
+}
+
+interface OpportunityData {
+  keyword: string
+  titleSuggestion: string
+  source: string
+  language: string
+  monthlyImpressions: number
+  currentPosition: number | null
+  bestPage: string | null
+  type: string
 }
 
 export async function refreshOpportunities(): Promise<{ count: number }> {
@@ -119,7 +158,7 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
 
   log('info', `Search queries opgeslagen: ${allQueries.length}`)
 
-  // 2. Identify content gaps: high impressions but no good ranking
+  // 2. Identify content gaps from Search Console
   const gapQueries = db.prepare(`
     SELECT query, language,
       SUM(impressions) as total_impressions,
@@ -138,71 +177,73 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
     total_clicks: number; best_position: number; best_page: string | null
   }[]
 
-  // 3. Fetch autocomplete suggestions for seed keywords
+  // 3. Expand seed keywords (Answer The Public style)
   const seedKeywords = db.prepare('SELECT keyword, language FROM seed_keywords WHERE active = 1').all() as { keyword: string; language: string }[]
-  let autocompleteSuggestions: string[] = []
+  let autocompleteTopics: AutocompleteTopic[] = []
   if (seedKeywords.length > 0) {
-    const suggestionsMap = await fetchSuggestionsForSeedKeywords(seedKeywords)
-    const allSuggestions = new Set<string>()
-    for (const suggestions of suggestionsMap.values()) {
-      for (const s of suggestions) allSuggestions.add(s.toLowerCase())
-    }
-    autocompleteSuggestions = [...allSuggestions]
+    autocompleteTopics = await expandSeedKeywords(seedKeywords)
   }
 
-  // 4. Calculate scores
+  // 4. Build opportunity map
   const { conversionRate, avgOrderValue } = getConversionMetrics()
   const maxImpressions = Math.max(1, ...gapQueries.map(q => q.total_impressions))
 
-  // Build existing URLs set for matching
   const existingArticles = db.prepare('SELECT url FROM articles').all() as { url: string }[]
   const existingUrls = new Set(existingArticles.map(a => a.url.toLowerCase()))
 
-  // Combine SC gaps + autocomplete into opportunities
-  interface OpportunityData {
-    keyword: string
-    source: string
-    language: string
-    monthlyImpressions: number
-    currentPosition: number | null
-    bestPage: string | null
+  // Build SC impressions lookup for autocomplete topics
+  const scByQuery = new Map<string, { impressions: number; position: number; page: string | null }>()
+  for (const gap of gapQueries) {
+    scByQuery.set(gap.query.toLowerCase(), {
+      impressions: Math.round(gap.total_impressions / 3),
+      position: gap.best_position,
+      page: gap.best_page,
+    })
   }
 
   const opportunityMap = new Map<string, OpportunityData>()
 
+  // SC content gaps
   for (const gap of gapQueries) {
     const key = gap.query.toLowerCase()
     opportunityMap.set(key, {
       keyword: gap.query,
+      titleSuggestion: generateTitleSuggestion(gap.query, 'direct'),
       source: 'search_console',
       language: gap.language,
-      monthlyImpressions: Math.round(gap.total_impressions / 3), // 3 months → monthly
+      monthlyImpressions: Math.round(gap.total_impressions / 3),
       currentPosition: gap.best_position,
       bestPage: gap.best_page,
+      type: 'direct',
     })
   }
 
-  for (const suggestion of autocompleteSuggestions) {
-    if (!opportunityMap.has(suggestion)) {
-      opportunityMap.set(suggestion, {
-        keyword: suggestion,
-        source: 'autocomplete',
-        language: 'en',
-        monthlyImpressions: 0,
-        currentPosition: null,
-        bestPage: null,
-      })
-    }
+  // Autocomplete topics — enriched with SC data if available
+  for (const topic of autocompleteTopics) {
+    const key = topic.keyword.toLowerCase()
+    if (opportunityMap.has(key)) continue // SC data takes priority
+
+    const scData = scByQuery.get(key)
+    opportunityMap.set(key, {
+      keyword: topic.keyword,
+      titleSuggestion: generateTitleSuggestion(topic.keyword, topic.type),
+      source: 'autocomplete',
+      language: topic.language,
+      monthlyImpressions: scData?.impressions || 0,
+      currentPosition: scData?.position || null,
+      bestPage: scData?.page || null,
+      type: topic.type,
+    })
   }
 
   // 5. Score and upsert
   const upsertOpp = db.prepare(`
-    INSERT INTO opportunities (keyword, source, language, monthly_impressions, estimated_volume,
+    INSERT INTO opportunities (keyword, title_suggestion, source, language, monthly_impressions, estimated_volume,
       current_position, difficulty, expected_traffic, expected_revenue, brand_fit_score,
       priority_score, has_existing_content, existing_url, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(keyword) DO UPDATE SET
-      source = ?, language = ?, monthly_impressions = ?, estimated_volume = ?,
+      title_suggestion = ?, source = ?, language = ?, monthly_impressions = ?, estimated_volume = ?,
       current_position = ?, difficulty = ?, expected_traffic = ?, expected_revenue = ?,
       brand_fit_score = ?, priority_score = ?, has_existing_content = ?, existing_url = ?,
       updated_at = CURRENT_TIMESTAMP
@@ -214,11 +255,10 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
       const brandFit = getBrandFitScore(opp.keyword)
       const difficultyScore = getDifficultyScore(opp.currentPosition)
       const difficulty = getDifficultyLabel(opp.currentPosition)
-      const estimatedVolume = opp.monthlyImpressions || 50 // Autocomplete gets minimum estimate
+      const estimatedVolume = opp.monthlyImpressions || 50
       const expectedTraffic = Math.round(estimatedVolume * estimatedCTR())
       const expectedRevenue = Math.round(expectedTraffic * conversionRate * avgOrderValue * 100) / 100
 
-      // Normalize for scoring
       const volumeScore = normalizeLog(opp.monthlyImpressions, maxImpressions)
       const maxRevenue = maxImpressions * estimatedCTR() * conversionRate * avgOrderValue
       const revenueScore = normalizeLog(expectedRevenue, maxRevenue)
@@ -230,16 +270,15 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
         brandFit * 0.20
       )
 
-      // Check existing content
       const hasExisting = opp.bestPage ? existingUrls.has(opp.bestPage.toLowerCase()) : false
       const existingUrl = hasExisting ? opp.bestPage : null
 
       upsertOpp.run(
-        opp.keyword, opp.source, opp.language, opp.monthlyImpressions, estimatedVolume,
+        opp.keyword, opp.titleSuggestion, opp.source, opp.language, opp.monthlyImpressions, estimatedVolume,
         opp.currentPosition, difficulty, expectedTraffic, expectedRevenue, brandFit,
         priorityScore, hasExisting ? 1 : 0, existingUrl,
         // ON CONFLICT params:
-        opp.source, opp.language, opp.monthlyImpressions, estimatedVolume,
+        opp.titleSuggestion, opp.source, opp.language, opp.monthlyImpressions, estimatedVolume,
         opp.currentPosition, difficulty, expectedTraffic, expectedRevenue, brandFit,
         priorityScore, hasExisting ? 1 : 0, existingUrl,
       )
@@ -249,7 +288,7 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
 
   insertOpps([...opportunityMap.values()])
 
-  log('info', `Opportunities ververst: ${count} totaal (conv.ratio: ${(conversionRate * 100).toFixed(2)}%, gem. orderwaarde: €${avgOrderValue.toFixed(2)})`)
+  log('info', `Opportunities ververst: ${count} totaal (${autocompleteTopics.length} autocomplete topics, conv.ratio: ${(conversionRate * 100).toFixed(2)}%, gem. orderwaarde: €${avgOrderValue.toFixed(2)})`)
 
   return { count }
 }
