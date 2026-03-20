@@ -10,9 +10,10 @@ const SETTINGS_KEYS = [
   'wc_consumer_secret',
   'chart_period',
   'refresh_frequency',
+  'anthropic_api_key',
 ]
 
-const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret']
+const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret', 'anthropic_api_key']
 
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied

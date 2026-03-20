@@ -152,7 +152,8 @@ export default function OpportunitiesPage() {
       const q = search.toLowerCase()
       result = result.filter(o =>
         o.keyword.toLowerCase().includes(q) ||
-        o.title_suggestion?.toLowerCase().includes(q)
+        o.title_suggestion?.toLowerCase().includes(q) ||
+        o.description?.toLowerCase().includes(q)
       )
     }
 
@@ -397,14 +398,26 @@ export default function OpportunitiesPage() {
                     style={{ animationDelay: `${Math.min(i * 20, 400)}ms` }}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      {/* Left: keyword info */}
+                      {/* Left: article info */}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1.5">
+                        <div className="flex items-center gap-2 mb-1">
                           <PriorityBadge score={opp.priority_score} />
-                          <span className="text-text-primary text-[14px] font-semibold truncate">{opp.keyword}</span>
+                          <span className="text-text-primary text-[14px] font-semibold leading-snug">
+                            {opp.title_suggestion || opp.keyword}
+                          </span>
                         </div>
-                        {opp.title_suggestion && (
-                          <p className="text-text-secondary text-[13px] mb-1.5 ml-[40px]">{opp.title_suggestion}</p>
+                        {opp.description && (
+                          <p className="text-text-secondary text-[12px] leading-relaxed mb-2 ml-[40px]">
+                            {opp.description.split('\n\nDoelzoekwoorden:')[0]}
+                          </p>
+                        )}
+                        {/* Target keywords */}
+                        {opp.description?.includes('Doelzoekwoorden:') && (
+                          <div className="flex flex-wrap gap-1 mb-2 ml-[40px]">
+                            {opp.description.split('Doelzoekwoorden: ')[1]?.split(', ').map((kw, j) => (
+                              <span key={j} className="text-[10px] text-text-tertiary bg-surface-2 px-1.5 py-0.5 rounded-md">{kw}</span>
+                            ))}
+                          </div>
                         )}
                         <div className="flex flex-wrap items-center gap-2 ml-[40px]">
                           {/* Difficulty badge */}
@@ -417,9 +430,9 @@ export default function OpportunitiesPage() {
                               {opp.language.toUpperCase()}
                             </span>
                           )}
-                          {/* Source */}
+                          {/* Source / angle */}
                           <span className="text-[11px] text-text-tertiary bg-surface-2 px-2 py-0.5 rounded-md">
-                            {opp.source === 'search_console' ? 'Search Console' : 'Autocomplete'}
+                            {opp.source.startsWith('ai_') ? opp.source.replace('ai_', '') : opp.source === 'search_console' ? 'Search Console' : 'Autocomplete'}
                           </span>
                           {/* Brand fit */}
                           {opp.brand_fit_score >= 60 && (

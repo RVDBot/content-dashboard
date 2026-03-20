@@ -90,6 +90,7 @@ export default function Settings({ onClose }: Props) {
     wc_consumer_secret: '',
     chart_period: '30',
     refresh_frequency: 'weekly',
+    anthropic_api_key: '',
   })
   const [properties, setProperties] = useState<(GA4PropertyForm & { id: number })[]>([])
   const [editingProp, setEditingProp] = useState<GA4PropertyForm | null>(null)
@@ -97,7 +98,8 @@ export default function Settings({ onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showWcSecret, setShowWcSecret] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'keywords' | 'logs'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'ai' | 'keywords' | 'logs'>('dashboard')
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false)
   const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [expandedLog, setExpandedLog] = useState<number | null>(null)
@@ -233,6 +235,7 @@ export default function Settings({ onClose }: Props) {
                 { id: 'dashboard' as const, label: 'Dashboard' },
                 { id: 'ga4' as const, label: 'Analytics' },
                 { id: 'woocommerce' as const, label: 'WooCommerce' },
+                { id: 'ai' as const, label: 'AI' },
                 { id: 'keywords' as const, label: 'Keywords' },
                 { id: 'logs' as const, label: 'Logboek' },
               ].map(tab => (
@@ -546,6 +549,34 @@ export default function Settings({ onClose }: Props) {
                     onToggle={() => setShowWcSecret(!showWcSecret)}
                     placeholder="cs_..."
                   />
+                </>
+              )}
+
+              {activeTab === 'ai' && (
+                <>
+                  <div>
+                    <h3 className="text-text-primary text-[13px] font-semibold mb-1">AI Artikel Suggesties</h3>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed">
+                      Gebruikt Claude om zoekwoorden te clusteren en concrete artikelideeën te genereren.
+                      Zonder API key worden keywords als individuele opportunities getoond.
+                    </p>
+                  </div>
+                  <Field
+                    label="Anthropic API Key"
+                    id="anthropic_api_key"
+                    value={settings.anthropic_api_key}
+                    onChange={v => setSettings(p => ({ ...p, anthropic_api_key: v }))}
+                    show={showAnthropicKey}
+                    onToggle={() => setShowAnthropicKey(!showAnthropicKey)}
+                    placeholder="sk-ant-..."
+                  />
+                  <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle">
+                    <p className="text-text-tertiary text-[11px] leading-relaxed">
+                      De AI analyseert alle verzamelde zoekwoorden (Search Console + Autocomplete) en groepeert ze in artikelclusters.
+                      Per cluster krijg je een titel, beschrijving, invalshoek en doelzoekwoorden.
+                      Gebruikt Claude Haiku voor snelheid en lage kosten (~$0.01 per refresh).
+                    </p>
+                  </div>
                 </>
               )}
 
