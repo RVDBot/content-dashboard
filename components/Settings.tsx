@@ -670,28 +670,94 @@ export default function Settings({ onClose }: Props) {
 
                   <div className="border-t border-border-subtle pt-5">
                     <h4 className="text-text-primary text-[13px] font-semibold mb-1">OAuth2 Credentials</h4>
-                    <p className="text-text-tertiary text-[11px] leading-relaxed mb-4">
-                      Maak OAuth2 credentials aan in Google Cloud Console (zelfde project als GA4). Kies &quot;Desktop app&quot; als type.
+                    <p className="text-text-tertiary text-[11px] leading-relaxed mb-3">
+                      Maak OAuth2 credentials aan in Google Cloud Console (zelfde project als GA4). Kies &quot;Desktop app&quot; als type en download het JSON-bestand.
                     </p>
 
-                    <div className="space-y-4">
-                      <Field
-                        label="Client ID"
-                        id="gads_client_id"
-                        value={settings.gads_client_id}
-                        onChange={v => setSettings(p => ({ ...p, gads_client_id: v }))}
-                        placeholder="...apps.googleusercontent.com"
-                      />
-                      <Field
-                        label="Client Secret"
-                        id="gads_client_secret"
-                        value={settings.gads_client_secret}
-                        onChange={v => setSettings(p => ({ ...p, gads_client_secret: v }))}
-                        show={showGadsSecret}
-                        onToggle={() => setShowGadsSecret(!showGadsSecret)}
-                        placeholder="GOCSPX-..."
-                      />
-                    </div>
+                    {settings.gads_client_id ? (
+                      <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-lg bg-success/10 flex items-center justify-center">
+                              <svg className="w-3.5 h-3.5 text-success" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                                <path d="M3 8.5l3.5 3.5 6.5-8" />
+                              </svg>
+                            </div>
+                            <div>
+                              <p className="text-text-primary text-[13px] font-medium">OAuth2 client gekoppeld</p>
+                              <p className="text-text-tertiary text-[11px] font-mono truncate max-w-[300px]">{settings.gads_client_id}</p>
+                            </div>
+                          </div>
+                          <label className="text-[11px] font-semibold text-accent hover:text-accent-hover transition-colors cursor-pointer">
+                            Wijzigen
+                            <input
+                              type="file"
+                              accept=".json"
+                              className="hidden"
+                              onChange={e => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                const reader = new FileReader()
+                                reader.onload = () => {
+                                  try {
+                                    const json = JSON.parse(reader.result as string)
+                                    const creds = json.installed || json.web
+                                    if (creds?.client_id && creds?.client_secret) {
+                                      setSettings(p => ({
+                                        ...p,
+                                        gads_client_id: creds.client_id,
+                                        gads_client_secret: creds.client_secret,
+                                      }))
+                                    } else {
+                                      alert('Ongeldig OAuth2 JSON-bestand. Verwacht "installed" of "web" met client_id en client_secret.')
+                                    }
+                                  } catch { alert('Ongeldig JSON-bestand') }
+                                }
+                                reader.readAsText(file)
+                                e.target.value = ''
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : (
+                      <label className="block bg-surface-0 rounded-xl border-2 border-dashed border-border hover:border-accent p-8 text-center cursor-pointer transition-colors duration-150 group">
+                        <div className="w-10 h-10 rounded-xl bg-surface-3 group-hover:bg-accent-subtle flex items-center justify-center mx-auto mb-3 transition-colors">
+                          <svg className="w-5 h-5 text-text-tertiary group-hover:text-accent transition-colors" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                            <path d="M8 3v10M3 8h10" />
+                          </svg>
+                        </div>
+                        <p className="text-text-primary text-[13px] font-medium mb-1">OAuth2 JSON uploaden</p>
+                        <p className="text-text-tertiary text-[11px]">Download het JSON-bestand bij het aanmaken van de OAuth2 Client ID</p>
+                        <input
+                          type="file"
+                          accept=".json"
+                          className="hidden"
+                          onChange={e => {
+                            const file = e.target.files?.[0]
+                            if (!file) return
+                            const reader = new FileReader()
+                            reader.onload = () => {
+                              try {
+                                const json = JSON.parse(reader.result as string)
+                                const creds = json.installed || json.web
+                                if (creds?.client_id && creds?.client_secret) {
+                                  setSettings(p => ({
+                                    ...p,
+                                    gads_client_id: creds.client_id,
+                                    gads_client_secret: creds.client_secret,
+                                  }))
+                                } else {
+                                  alert('Ongeldig OAuth2 JSON-bestand. Verwacht "installed" of "web" met client_id en client_secret.')
+                                }
+                              } catch { alert('Ongeldig JSON-bestand') }
+                            }
+                            reader.readAsText(file)
+                            e.target.value = ''
+                          }}
+                        />
+                      </label>
+                    )}
                   </div>
 
                   <div className="border-t border-border-subtle pt-5">
