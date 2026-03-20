@@ -51,7 +51,7 @@ export async function fetchKeywordVolumes(
        WHERE keyword = ? AND fetched_at > datetime('now', '-7 days')`
     ).get(kw.toLowerCase()) as { keyword: string; avg_monthly_searches: number; competition: string } | undefined
 
-    if (cached) {
+    if (cached && cached.avg_monthly_searches > 0) {
       results.set(kw.toLowerCase(), {
         keyword: cached.keyword,
         avgMonthlySearches: cached.avg_monthly_searches,
@@ -78,7 +78,7 @@ export async function fetchKeywordVolumes(
 
     const customerId = credentials.customerId.replace(/-/g, '')
     const res = await fetch(
-      `https://googleads.googleapis.com/v23/customers/${customerId}:generateKeywordIdeas`,
+      `https://googleads.googleapis.com/v23/customers/${customerId}:generateKeywordHistoricalMetrics`,
       {
         method: 'POST',
         headers: {
@@ -87,7 +87,7 @@ export async function fetchKeywordVolumes(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          keywordSeed: { keywords: batch },
+          keywords: batch,
           keywordPlanNetwork: 'GOOGLE_SEARCH',
         }),
       }
@@ -101,20 +101,7 @@ export async function fetchKeywordVolumes(
 
     const data = await res.json()
 
-    // Build a lookup from the response
-    const responseLookup = new Map<string, { searches: number; competition: string }>()
-    for (const result of data.results || []) {
-      const text = result.text?.toLowerCase()
-      const metrics = result.keywordIdeaMetrics
-      if (text && metrics) {
-        responseLookup.set(text, {
-          searches: parseInt(metrics.avgMonthlySearches || '0', 10),
-          competition: metrics.competition || 'UNSPECIFIED',
-        })
-      }
-    }
-
-    // Match our requested keywords to results
+    // Match results back to our keywords — response is in same order as input
     const upsert = db.prepare(`
       INSERT INTO keyword_volumes (keyword, avg_monthly_searches, competition, fetched_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
@@ -122,14 +109,20 @@ export async function fetchKeywordVolumes(
         avg_monthly_searches = ?, competition = ?, fetched_at = CURRENT_TIMESTAMP
     `)
 
-    for (const kw of batch) {
+    for (let j = 0; j < batch.length; j++) {
+      const kw = batch[j]
       const key = kw.toLowerCase()
-      const match = responseLookup.get(key)
-      const searches = match?.searches || 0
-      const competition = match?.competition || 'UNSPECIFIED'
+      const result = data.results?.[j]
+      const metrics = result?.keywordMetrics
+      const searches = metrics ? parseInt(metrics.avgMonthlySearches || '0', 10) : 0
+      const competition = metrics?.competition || 'UNSPECIFIED'
 
       results.set(key, { keyword: kw, avgMonthlySearches: searches, competition })
       upsert.run(key, searches, competition, searches, competition)
+
+      if (searches > 0) {
+        log('info', `Keyword Planner: "${kw}" = ${searches} zoekvolume/mnd`)
+      }
     }
 
     // Rate limit between batches
