@@ -78,7 +78,7 @@ export async function fetchKeywordVolumes(
 
     const customerId = credentials.customerId.replace(/-/g, '')
     const res = await fetch(
-      `https://googleads.googleapis.com/v18/customers/${customerId}:generateKeywordIdeas`,
+      `https://googleads.googleapis.com/v17/customers/${customerId}:generateKeywordIdeas`,
       {
         method: 'POST',
         headers: {
