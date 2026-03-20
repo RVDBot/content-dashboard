@@ -5,45 +5,36 @@ export interface TranslationGroup {
 }
 
 /**
- * Parse the post-sitemap.xml to extract:
- * 1. Valid post URLs (to filter out category pages)
- * 2. Translation mappings between languages via hreflang tags
- *
- * Returns a map of URL pathname → group ID, so all language versions
- * of the same article share the same group.
+ * Parse a sitemap XML and extract all URL pathnames + hreflang translation groups.
+ * Works for both post-sitemap.xml and category-sitemap.xml.
  */
-export async function fetchSitemapTranslations(siteUrl: string): Promise<{
-  validPaths: Set<string>
+async function parseSitemap(sitemapUrl: string): Promise<{
+  paths: Set<string>
   groups: TranslationGroup[]
 }> {
-  const base = siteUrl.replace(/\/+$/, '')
-  const sitemapUrl = `${base}/post-sitemap.xml`
-  const validPaths = new Set<string>()
+  const paths = new Set<string>()
   const groups: TranslationGroup[] = []
 
   try {
     const res = await fetch(sitemapUrl)
     if (!res.ok) {
       log('warn', `Sitemap niet bereikbaar: ${res.status}`, { url: sitemapUrl })
-      return { validPaths, groups }
+      return { paths, groups }
     }
 
     const xml = await res.text()
-
-    // Split into <url> blocks
-    const urlBlocks = xml.split('<url>').slice(1) // skip before first <url>
+    const urlBlocks = xml.split('<url>').slice(1)
 
     for (const block of urlBlocks) {
-      // Extract <loc>
       const locMatch = block.match(/<loc>([^<]+)<\/loc>/)
       if (!locMatch) continue
 
       const loc = locMatch[1]
 
-      // Skip the /blog/ index page
+      // Skip index pages like /blog/ itself
       try {
-        const path = new URL(loc).pathname
-        if (path === '/blog/' || path === '/blog') continue
+        const p = new URL(loc).pathname
+        if (p === '/blog/' || p === '/blog') continue
       } catch { continue }
 
       // Extract all hreflang links
@@ -51,34 +42,47 @@ export async function fetchSitemapTranslations(siteUrl: string): Promise<{
       const hreflangRegex = /hreflang="([^"]+)"\s+href="([^"]+)"/g
       let match
       while ((match = hreflangRegex.exec(block)) !== null) {
-        const lang = match[1]
-        const href = match[2]
-        if (lang === 'x-default') continue
-        hreflangs[lang] = href
+        if (match[1] === 'x-default') continue
+        hreflangs[match[1]] = match[2]
       }
 
-      // Add all paths from this group as valid
+      // Add all hreflang paths
       for (const [, href] of Object.entries(hreflangs)) {
-        try {
-          validPaths.add(new URL(href).pathname)
-        } catch { /* skip invalid */ }
+        try { paths.add(new URL(href).pathname) } catch {}
       }
 
       // Also add the <loc> path
-      try {
-        validPaths.add(new URL(loc).pathname)
-      } catch { /* skip */ }
+      try { paths.add(new URL(loc).pathname) } catch {}
 
       if (Object.keys(hreflangs).length > 0) {
         groups.push({ urls: hreflangs })
       }
     }
 
-    log('info', `Sitemap geparsed: ${groups.length} artikelen, ${validPaths.size} geldige paden`, { url: sitemapUrl })
+    log('info', `Sitemap geparsed: ${paths.size} paden, ${groups.length} groepen`, { url: sitemapUrl })
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e)
     log('warn', `Sitemap niet bereikbaar: ${errMsg}`, { url: sitemapUrl })
   }
 
-  return { validPaths, groups }
+  return { paths, groups }
+}
+
+/**
+ * Fetch post-sitemap.xml — returns valid post paths + translation groups (hreflang).
+ */
+export async function fetchPostSitemap(sitemapUrl: string): Promise<{
+  validPaths: Set<string>
+  groups: TranslationGroup[]
+}> {
+  const { paths, groups } = await parseSitemap(sitemapUrl)
+  return { validPaths: paths, groups }
+}
+
+/**
+ * Fetch category-sitemap.xml — returns all category paths to exclude.
+ */
+export async function fetchCategorySitemap(sitemapUrl: string): Promise<Set<string>> {
+  const { paths } = await parseSitemap(sitemapUrl)
+  return paths
 }

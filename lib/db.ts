@@ -73,6 +73,8 @@ function initSchema(db: Database.Database) {
   // Migrations
   try { db.exec(`ALTER TABLE articles ADD COLUMN language TEXT`) } catch {}
   try { db.exec(`ALTER TABLE articles ADD COLUMN group_id INTEGER`) } catch {}
+  try { db.exec(`ALTER TABLE ga4_properties ADD COLUMN post_sitemap_path TEXT NOT NULL DEFAULT '/post-sitemap.xml'`) } catch {}
+  try { db.exec(`ALTER TABLE ga4_properties ADD COLUMN category_sitemap_path TEXT NOT NULL DEFAULT '/category-sitemap.xml'`) } catch {}
 }
 
 export interface GA4Property {
@@ -82,5 +84,7 @@ export interface GA4Property {
   property_id: string
   base_url: string
   blog_path: string
+  post_sitemap_path: string
+  category_sitemap_path: string
   created_at: string
 }

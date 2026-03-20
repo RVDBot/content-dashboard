@@ -55,7 +55,8 @@ interface GA4PropertyForm {
   language: string
   property_id: string
   base_url: string
-  blog_path: string
+  post_sitemap_path: string
+  category_sitemap_path: string
 }
 
 const LANGUAGES = [
@@ -91,7 +92,7 @@ export default function Settings({ onClose }: Props) {
   const [expandedLog, setExpandedLog] = useState<number | null>(null)
 
   const emptyProp: GA4PropertyForm = {
-    name: '', language: 'nl', property_id: '', base_url: '', blog_path: '/blog/',
+    name: '', language: 'nl', property_id: '', base_url: '', post_sitemap_path: '/post-sitemap.xml', category_sitemap_path: '/category-sitemap.xml',
   }
 
   async function fetchProperties() {
@@ -204,7 +205,7 @@ export default function Settings({ onClose }: Props) {
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            <div className="flex-1 overflow-y-auto min-h-0 p-6 space-y-5">
               {activeTab === 'ga4' && (
                 <>
                   <div>
@@ -325,7 +326,8 @@ export default function Settings({ onClose }: Props) {
                           </div>
                           <Field label="GA4 Property ID" id="prop_id" value={editingProp.property_id} onChange={v => setEditingProp(p => p && ({ ...p, property_id: v }))} placeholder="123456789" />
                           <Field label="Base URL" id="prop_base_url" value={editingProp.base_url} onChange={v => setEditingProp(p => p && ({ ...p, base_url: v }))} placeholder="https://speedropeshop.com" />
-                          <Field label="Blog pad" id="prop_blog_path" value={editingProp.blog_path} onChange={v => setEditingProp(p => p && ({ ...p, blog_path: v }))} placeholder="/blog/" />
+                          <Field label="Post Sitemap pad" id="prop_post_sitemap" value={editingProp.post_sitemap_path} onChange={v => setEditingProp(p => p && ({ ...p, post_sitemap_path: v }))} placeholder="/post-sitemap.xml" />
+                          <Field label="Category Sitemap pad" id="prop_cat_sitemap" value={editingProp.category_sitemap_path} onChange={v => setEditingProp(p => p && ({ ...p, category_sitemap_path: v }))} placeholder="/category-sitemap.xml" />
                           <div className="flex gap-2 pt-1">
                             <button
                               onClick={saveProp}

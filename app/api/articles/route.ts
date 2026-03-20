@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb, GA4Property } from '@/lib/db'
 import { fetchBlogArticles, fetchBlogArticlesDaily } from '@/lib/ga4'
-import { fetchSitemapTranslations, TranslationGroup } from '@/lib/wordpress'
+import { fetchPostSitemap, fetchCategorySitemap } from '@/lib/wordpress'
 import { log } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth-guard'
 
@@ -64,11 +64,50 @@ export async function GET(req: NextRequest) {
 
   const errors: string[] = []
 
-  // Fetch sitemap translations from the EN site (.com)
-  const enProp = properties.find(p => p.language === 'en')
-  const sitemapSite = enProp?.base_url || properties[0]?.base_url || ''
+  // Fetch sitemaps from the EN site (or first property) for translation groups
+  const enProp = properties.find(p => p.language === 'en') || properties[0]
+  const enBase = enProp.base_url.replace(/\/+$/, '')
 
-  const { validPaths, groups } = await fetchSitemapTranslations(sitemapSite)
+  // Fetch all sitemaps in parallel: EN post-sitemap for groups + each property's sitemaps
+  const postSitemapUrls = new Set<string>()
+  const categorySitemapUrls = new Set<string>()
+  for (const prop of properties) {
+    const base = prop.base_url.replace(/\/+$/, '')
+    if (base && prop.post_sitemap_path) postSitemapUrls.add(`${base}${prop.post_sitemap_path}`)
+    if (base && prop.category_sitemap_path) categorySitemapUrls.add(`${base}${prop.category_sitemap_path}`)
+  }
+
+  log('info', `Sitemaps ophalen: ${postSitemapUrls.size} post-sitemaps, ${categorySitemapUrls.size} category-sitemaps`)
+
+  const [postResults, categoryResults] = await Promise.all([
+    Promise.all([...postSitemapUrls].map(url => fetchPostSitemap(url))),
+    Promise.all([...categorySitemapUrls].map(url => fetchCategorySitemap(url))),
+  ])
+
+  // Merge all valid post paths
+  const validPaths = new Set<string>()
+  let groups = postResults[0]?.groups || []
+  for (const result of postResults) {
+    for (const p of result.validPaths) validPaths.add(p)
+    // Use the EN site's groups (first result) for translation mapping
+    // but merge groups from other sitemaps if they add new ones
+  }
+
+  // Use the EN property's sitemap for canonical translation groups
+  const enSitemapUrl = `${enBase}${enProp.post_sitemap_path}`
+  const enResult = postResults.find((_, i) => [...postSitemapUrls][i] === enSitemapUrl)
+  if (enResult) groups = enResult.groups
+
+  // Merge all category paths to exclude
+  const categoryPaths = new Set<string>()
+  for (const catSet of categoryResults) {
+    for (const p of catSet) categoryPaths.add(p)
+  }
+
+  // Remove category paths from valid paths
+  for (const cp of categoryPaths) validPaths.delete(cp)
+
+  log('info', `Sitemap resultaat: ${validPaths.size} geldige paden, ${categoryPaths.size} categorie-paden, ${groups.length} vertaalgroepen`)
 
   // Build a path → group index mapping from hreflang data
   const pathToGroup = new Map<string, number>()
@@ -112,12 +151,11 @@ export async function GET(req: NextRequest) {
     try {
       log('info', `GA4 data ophalen voor ${prop.name}`, { property_id: prop.property_id, language: prop.language })
 
-      // Fetch aggregate (365 days)
-      const ga4Data = await fetchBlogArticles(credentials, prop.property_id, prop.blog_path)
+      // Fetch aggregate (365 days) — no dimension filter, filter server-side
+      const ga4Data = await fetchBlogArticles(credentials, prop.property_id)
       let included = 0
       let skipped = 0
       for (const row of ga4Data) {
-        // Check if this path is a valid blog post
         if (validPaths.size > 0 && !validPaths.has(row.pagePath)) {
           skipped++
           continue
@@ -130,7 +168,7 @@ export async function GET(req: NextRequest) {
       }
 
       // Fetch daily (30 days)
-      const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id, prop.blog_path)
+      const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id)
       for (const row of dailyData) {
         if (validPaths.size > 0 && !validPaths.has(row.pagePath)) continue
         const baseUrl = prop.base_url.replace(/\/$/, '')
@@ -157,6 +195,7 @@ export async function GET(req: NextRequest) {
   log('info', `Data vernieuwd: ${articles.length} artikelen, ${daily.length} dagelijkse rijen`, {
     translation_groups: groups.length,
     valid_paths: validPaths.size,
+    category_paths: categoryPaths.size,
     errors: errors.length || undefined,
   })
 
