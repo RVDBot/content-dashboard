@@ -252,6 +252,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false)
   const [cached, setCached] = useState(false)
   const [metric, setMetric] = useState<'revenue' | 'organicUsers'>('revenue')
+  const [chartDays, setChartDays] = useState(30)
 
   function loadArticles(refresh = false) {
     const url = refresh ? '/api/articles?refresh=1' : '/api/articles'
@@ -273,6 +274,7 @@ export default function Home() {
           setArticles(data.articles || [])
           setDaily(data.daily || [])
           setCached(!!data.cached)
+          if (data.chartDays) setChartDays(data.chartDays)
         }
       })
       .catch(e => setError(e.message))
@@ -477,7 +479,7 @@ export default function Home() {
                 </button>
               </div>
               <span className="text-text-tertiary text-[11px]">
-                Grafiek: 30 dagen &middot; Totalen: 365 dagen &middot; Alleen organisch zoekverkeer
+                Grafiek: {chartDays} dagen &middot; Totalen: 365 dagen &middot; Alleen organisch zoekverkeer
               </span>
             </div>
 

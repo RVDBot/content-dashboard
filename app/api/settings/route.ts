@@ -8,6 +8,8 @@ const SETTINGS_KEYS = [
   'wc_store_url',
   'wc_consumer_key',
   'wc_consumer_secret',
+  'chart_period',
+  'refresh_frequency',
 ]
 
 const SECRET_KEYS = ['ga4_private_key', 'wc_consumer_secret']

@@ -5,14 +5,22 @@ import { fetchPostSitemap, fetchCategorySitemap } from '@/lib/wordpress'
 import { log } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth-guard'
 
-function getCredentials() {
+function getSetting(key: string): string {
   const db = getDb()
-  const get = (key: string) =>
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value || ''
+  return (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value || ''
+}
+
+function getCredentials() {
   return {
-    clientEmail: get('ga4_client_email'),
-    privateKey: get('ga4_private_key'),
+    clientEmail: getSetting('ga4_client_email'),
+    privateKey: getSetting('ga4_private_key'),
   }
+}
+
+function getChartDays(): number {
+  const period = getSetting('chart_period') || '30'
+  const days = parseInt(period, 10)
+  return [30, 90, 365].includes(days) ? days : 30
 }
 
 export async function GET(req: NextRequest) {
@@ -36,6 +44,7 @@ export async function GET(req: NextRequest) {
         })),
         daily,
         cached: true,
+        chartDays: getChartDays(),
       })
     }
   }
@@ -166,7 +175,8 @@ export async function GET(req: NextRequest) {
       }
 
       // Fetch daily (30 days)
-      const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id)
+      const chartDays = getChartDays()
+      const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id, chartDays)
       let dailyIncluded = 0
       let dailySkipped = 0
       for (const row of dailyData) {
@@ -210,6 +220,7 @@ export async function GET(req: NextRequest) {
     })),
     daily,
     cached: false,
+    chartDays: getChartDays(),
     ...(errors.length > 0 ? { errors } : {}),
   })
 }

@@ -201,9 +201,10 @@ export async function fetchBlogArticles(
 export async function fetchBlogArticlesDaily(
   credentials: GA4Credentials,
   propertyId: string,
+  chartDays: number = 30,
 ): Promise<GA4DailyData[]> {
   const client = createClient(credentials)
-  const dateRanges = [{ startDate: '30daysAgo', endDate: 'today' }]
+  const dateRanges = [{ startDate: `${chartDays}daysAgo`, endDate: 'today' }]
 
   // Three queries in parallel:
   // 1. pagePath + date: pageviews (all traffic)

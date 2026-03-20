@@ -79,6 +79,8 @@ export default function Settings({ onClose }: Props) {
     wc_store_url: '',
     wc_consumer_key: '',
     wc_consumer_secret: '',
+    chart_period: '30',
+    refresh_frequency: 'weekly',
   })
   const [properties, setProperties] = useState<(GA4PropertyForm & { id: number })[]>([])
   const [editingProp, setEditingProp] = useState<GA4PropertyForm | null>(null)
@@ -86,7 +88,7 @@ export default function Settings({ onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showWcSecret, setShowWcSecret] = useState(false)
-  const [activeTab, setActiveTab] = useState<'ga4' | 'woocommerce' | 'logs'>('ga4')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'logs'>('dashboard')
   const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [expandedLog, setExpandedLog] = useState<number | null>(null)
@@ -186,6 +188,7 @@ export default function Settings({ onClose }: Props) {
             {/* Tabs */}
             <div className="w-[150px] shrink-0 border-r border-border-subtle p-2">
               {[
+                { id: 'dashboard' as const, label: 'Dashboard' },
                 { id: 'ga4' as const, label: 'Analytics' },
                 { id: 'woocommerce' as const, label: 'WooCommerce' },
                 { id: 'logs' as const, label: 'Logboek' },
@@ -206,6 +209,69 @@ export default function Settings({ onClose }: Props) {
 
             {/* Content */}
             <div className="flex-1 overflow-y-auto min-h-0 p-6 space-y-5">
+              {activeTab === 'dashboard' && (
+                <>
+                  <div>
+                    <h3 className="text-text-primary text-[13px] font-semibold mb-1">Dashboard instellingen</h3>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed">
+                      Configureer de grafiekperiode en hoe vaak data automatisch wordt opgehaald.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider">Grafiekperiode</label>
+                    <div className="flex gap-2">
+                      {[
+                        { value: '30', label: '30 dagen' },
+                        { value: '90', label: '90 dagen' },
+                        { value: '365', label: '1 jaar' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setSettings(p => ({ ...p, chart_period: opt.value }))}
+                          className={`flex-1 text-[13px] font-medium px-3 py-2.5 rounded-xl border transition-all duration-150 ${
+                            settings.chart_period === opt.value
+                              ? 'border-accent bg-accent-subtle text-accent'
+                              : 'border-border bg-surface-0 text-text-secondary hover:border-text-tertiary'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-text-tertiary text-[11px]">
+                      Bepaalt het aantal dagen op de X-as van de grafiek per artikel.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider">Data ophalen</label>
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'daily', label: 'Dagelijks' },
+                        { value: 'weekly', label: 'Wekelijks' },
+                        { value: 'monthly', label: 'Maandelijks' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          onClick={() => setSettings(p => ({ ...p, refresh_frequency: opt.value }))}
+                          className={`flex-1 text-[13px] font-medium px-3 py-2.5 rounded-xl border transition-all duration-150 ${
+                            settings.refresh_frequency === opt.value
+                              ? 'border-accent bg-accent-subtle text-accent'
+                              : 'border-border bg-surface-0 text-text-secondary hover:border-text-tertiary'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-text-tertiary text-[11px]">
+                      Hoe vaak de GA4 data automatisch wordt ververst. Handmatig vernieuwen kan altijd via de knop in de header.
+                    </p>
+                  </div>
+                </>
+              )}
+
               {activeTab === 'ga4' && (
                 <>
                   <div>
