@@ -8,6 +8,7 @@ interface Article {
   url: string
   title: string
   language: string | null
+  group_id: number | null
   pageviews: number
   sessions: number
   revenue: number
@@ -25,7 +26,7 @@ interface DailyRow {
 }
 
 interface ArticleGroup {
-  slug: string
+  key: string
   title: string
   languages: Record<string, Article>
   totalRevenue: number
@@ -290,27 +291,38 @@ export default function Home() {
     return map
   }, [articles])
 
-  // Group articles by slug, including daily data
+  // Build URL → group key lookup (using group_id from sitemap hreflang, fallback to slug)
+  const urlToGroupKey = useMemo(() => {
+    const map = new Map<string, string>()
+    articles.forEach(a => {
+      const key = a.group_id !== null ? `g:${a.group_id}` : `s:${extractSlug(a.url)}`
+      map.set(a.url, key)
+    })
+    return map
+  }, [articles])
+
+  // Group articles by group_id (from sitemap hreflang), including daily data
   const groups = useMemo<ArticleGroup[]>(() => {
     const map = new Map<string, ArticleGroup>()
 
     for (const a of articles) {
-      const slug = extractSlug(a.url)
-      let group = map.get(slug)
+      const key = urlToGroupKey.get(a.url) || `s:${extractSlug(a.url)}`
+      let group = map.get(key)
       if (!group) {
-        group = { slug, title: '', languages: {}, totalRevenue: 0, totalSessions: 0, daily: {} }
-        map.set(slug, group)
+        group = { key, title: '', languages: {}, totalRevenue: 0, totalSessions: 0, daily: {} }
+        map.set(key, group)
       }
       if (a.language) group.languages[a.language] = a
       group.totalRevenue += a.revenue
       group.totalSessions += a.sessions
-      if (a.language === 'en' || !group.title) group.title = a.title || slug
+      if (a.language === 'en' || !group.title) group.title = a.title || extractSlug(a.url)
     }
 
     // Map daily data to groups
     for (const d of daily) {
-      const slug = extractSlug(d.url)
-      const group = map.get(slug)
+      const key = urlToGroupKey.get(d.url)
+      if (!key) continue
+      const group = map.get(key)
       if (!group) continue
       const lang = urlToLang.get(d.url)
       if (!lang) continue
@@ -321,7 +333,7 @@ export default function Home() {
     }
 
     return [...map.values()]
-  }, [articles, daily, urlToLang])
+  }, [articles, daily, urlToLang, urlToGroupKey])
 
   const languages = useMemo(() => {
     const langs = new Set<string>()
@@ -479,7 +491,7 @@ export default function Home() {
             {/* Article cards */}
             <div className="space-y-3">
               {sortedGroups.map((g, i) => (
-                <ArticleCard key={g.slug} group={g} languages={languages} metric={metric} rank={i + 1} allDates={allDates} />
+                <ArticleCard key={g.key} group={g} languages={languages} metric={metric} rank={i + 1} allDates={allDates} />
               ))}
             </div>
           </>

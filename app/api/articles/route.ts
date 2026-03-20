@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb, GA4Property } from '@/lib/db'
 import { fetchBlogArticles, fetchBlogArticlesDaily } from '@/lib/ga4'
-import { fetchPostSlugs } from '@/lib/wordpress'
+import { fetchSitemapTranslations, TranslationGroup } from '@/lib/wordpress'
 import { log } from '@/lib/logger'
 import { requireAuth } from '@/lib/auth-guard'
 
@@ -15,13 +15,6 @@ function getCredentials() {
   }
 }
 
-function extractSlug(pagePath: string): string {
-  const match = pagePath.match(/\/blog\/(.+?)\/?\s*$/)
-  if (match) return match[1]
-  const segments = pagePath.replace(/\/+$/, '').split('/')
-  return segments[segments.length - 1] || pagePath
-}
-
 export async function GET(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
   const refresh = req.nextUrl.searchParams.get('refresh') === '1'
@@ -30,7 +23,7 @@ export async function GET(req: NextRequest) {
   // Return cached data if available and no refresh requested
   if (!refresh) {
     const cached = db.prepare('SELECT * FROM articles ORDER BY revenue DESC').all() as {
-      url: string; title: string; language: string | null; pageviews: number; sessions: number; revenue: number; transactions: number
+      url: string; title: string; language: string | null; group_id: number | null; pageviews: number; sessions: number; revenue: number; transactions: number
     }[]
     if (cached.length > 0) {
       const daily = db.prepare('SELECT * FROM article_daily ORDER BY date ASC').all() as {
@@ -71,29 +64,33 @@ export async function GET(req: NextRequest) {
 
   const errors: string[] = []
 
-  // Fetch valid blog post slugs from WordPress REST API
-  // Use the first property's base_url or wc_store_url
-  const siteUrl = properties[0]?.base_url ||
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get('wc_store_url') as { value: string } | undefined)?.value || ''
-  let validSlugs: Set<string> | null = null
-  if (siteUrl) {
-    validSlugs = await fetchPostSlugs(siteUrl)
-    if (validSlugs.size === 0) {
-      log('warn', 'Geen post slugs gevonden via WordPress API, alle artikelen worden getoond')
-      validSlugs = null // fallback: show all
+  // Fetch sitemap translations from the EN site (.com)
+  const enProp = properties.find(p => p.language === 'en')
+  const sitemapSite = enProp?.base_url || properties[0]?.base_url || ''
+
+  const { validPaths, groups } = await fetchSitemapTranslations(sitemapSite)
+
+  // Build a path → group index mapping from hreflang data
+  const pathToGroup = new Map<string, number>()
+  groups.forEach((group, idx) => {
+    for (const [, url] of Object.entries(group.urls)) {
+      try {
+        pathToGroup.set(new URL(url).pathname, idx)
+      } catch { /* skip */ }
     }
-  }
+  })
 
   // Clear old data on refresh
   db.prepare('DELETE FROM articles').run()
   db.prepare('DELETE FROM article_daily').run()
 
   const upsertArticle = db.prepare(`
-    INSERT INTO articles (url, title, language, pageviews, sessions, revenue, transactions, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO articles (url, title, language, group_id, pageviews, sessions, revenue, transactions, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(url) DO UPDATE SET
       title = excluded.title,
       language = excluded.language,
+      group_id = excluded.group_id,
       pageviews = excluded.pageviews,
       sessions = excluded.sessions,
       revenue = excluded.revenue,
@@ -114,31 +111,34 @@ export async function GET(req: NextRequest) {
   for (const prop of properties) {
     try {
       log('info', `GA4 data ophalen voor ${prop.name}`, { property_id: prop.property_id, language: prop.language })
-      const baseUrl = prop.base_url.replace(/\/$/, '')
 
       // Fetch aggregate (365 days)
       const ga4Data = await fetchBlogArticles(credentials, prop.property_id, prop.blog_path)
+      let included = 0
       let skipped = 0
       for (const row of ga4Data) {
-        const slug = extractSlug(row.pagePath)
-        if (validSlugs && !validSlugs.has(slug)) {
+        // Check if this path is a valid blog post
+        if (validPaths.size > 0 && !validPaths.has(row.pagePath)) {
           skipped++
           continue
         }
+        const groupId = pathToGroup.get(row.pagePath) ?? null
+        const baseUrl = prop.base_url.replace(/\/$/, '')
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
-        upsertArticle.run(fullUrl, row.pageTitle, prop.language, row.pageviews, row.sessions, row.revenue, row.transactions)
+        upsertArticle.run(fullUrl, row.pageTitle, prop.language, groupId, row.pageviews, row.sessions, row.revenue, row.transactions)
+        included++
       }
 
       // Fetch daily (30 days)
       const dailyData = await fetchBlogArticlesDaily(credentials, prop.property_id, prop.blog_path)
       for (const row of dailyData) {
-        const slug = extractSlug(row.pagePath)
-        if (validSlugs && !validSlugs.has(slug)) continue
+        if (validPaths.size > 0 && !validPaths.has(row.pagePath)) continue
+        const baseUrl = prop.base_url.replace(/\/$/, '')
         const fullUrl = baseUrl ? `${baseUrl}${row.pagePath}` : row.pagePath
         upsertDaily.run(fullUrl, row.date, row.pageviews, row.sessions, row.revenue, row.transactions)
       }
 
-      log('info', `${ga4Data.length - skipped} artikelen (${skipped} gefilterd) + dagelijkse data voor ${prop.name}`)
+      log('info', `${included} artikelen (${skipped} gefilterd) + dagelijkse data voor ${prop.name}`)
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
       errors.push(`${prop.name}: ${errMsg}`)
@@ -147,7 +147,7 @@ export async function GET(req: NextRequest) {
   }
 
   const articles = db.prepare('SELECT * FROM articles ORDER BY revenue DESC').all() as {
-    url: string; title: string; language: string | null; pageviews: number; sessions: number; revenue: number; transactions: number
+    url: string; title: string; language: string | null; group_id: number | null; pageviews: number; sessions: number; revenue: number; transactions: number
   }[]
 
   const daily = db.prepare('SELECT * FROM article_daily ORDER BY date ASC').all() as {
@@ -155,7 +155,8 @@ export async function GET(req: NextRequest) {
   }[]
 
   log('info', `Data vernieuwd: ${articles.length} artikelen, ${daily.length} dagelijkse rijen`, {
-    valid_slugs: validSlugs?.size || 'niet beschikbaar',
+    translation_groups: groups.length,
+    valid_paths: validPaths.size,
     errors: errors.length || undefined,
   })
 

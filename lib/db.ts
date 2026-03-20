@@ -70,8 +70,9 @@ function initSchema(db: Database.Database) {
     );
   `)
 
-  // Migration: add language column
+  // Migrations
   try { db.exec(`ALTER TABLE articles ADD COLUMN language TEXT`) } catch {}
+  try { db.exec(`ALTER TABLE articles ADD COLUMN group_id INTEGER`) } catch {}
 }
 
 export interface GA4Property {
