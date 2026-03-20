@@ -38,36 +38,31 @@ function createClient(credentials: GA4Credentials) {
   })
 }
 
-export async function fetchAllPages(
+export async function fetchBlogArticles(
   credentials: GA4Credentials,
   propertyId: string,
-  startDate: string,
-  endDate: string,
-  includeDateDimension: boolean = false,
-): Promise<(GA4ArticleData | GA4DailyData)[]> {
+): Promise<GA4ArticleData[]> {
   const client = createClient(credentials)
-  const allRows: (GA4ArticleData | GA4DailyData)[] = []
+
+  // Fetch with pagePath + pageTitle dimensions
+  const allRows: { pagePath: string; pageTitle: string; pageviews: number; sessions: number; revenue: number; transactions: number }[] = []
   let offset = 0
   const pageSize = 10000
-
-  const dimensions = includeDateDimension
-    ? [{ name: 'pagePath' }, { name: 'date' }]
-    : [{ name: 'pagePath' }, { name: 'pageTitle' }]
 
   while (true) {
     const [response] = await client.runReport({
       property: `properties/${propertyId}`,
-      dateRanges: [{ startDate, endDate }],
-      dimensions,
+      dateRanges: [{ startDate: '365daysAgo', endDate: 'today' }],
+      dimensions: [
+        { name: 'pagePath' },
+        { name: 'pageTitle' },
+      ],
       metrics: [
         { name: 'screenPageViews' },
         { name: 'sessions' },
         { name: 'purchaseRevenue' },
         { name: 'transactions' },
       ],
-      ...(!includeDateDimension ? {
-        orderBys: [{ metric: { metricName: 'purchaseRevenue' }, desc: true }],
-      } : {}),
       limit: pageSize,
       offset,
     })
@@ -75,20 +70,80 @@ export async function fetchAllPages(
     if (!response.rows || response.rows.length === 0) break
 
     for (const row of response.rows) {
-      const pagePath = row.dimensionValues?.[0]?.value || ''
-      const pageviews = parseInt(row.metricValues?.[0]?.value || '0', 10)
-      const sessions = parseInt(row.metricValues?.[1]?.value || '0', 10)
-      const revenue = parseFloat(row.metricValues?.[2]?.value || '0')
-      const transactions = parseInt(row.metricValues?.[3]?.value || '0', 10)
+      allRows.push({
+        pagePath: row.dimensionValues?.[0]?.value || '',
+        pageTitle: row.dimensionValues?.[1]?.value || '',
+        pageviews: parseInt(row.metricValues?.[0]?.value || '0', 10),
+        sessions: parseInt(row.metricValues?.[1]?.value || '0', 10),
+        revenue: parseFloat(row.metricValues?.[2]?.value || '0'),
+        transactions: parseInt(row.metricValues?.[3]?.value || '0', 10),
+      })
+    }
 
-      if (includeDateDimension) {
-        const raw = row.dimensionValues?.[1]?.value || ''
-        const date = raw.length === 8 ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}` : raw
-        allRows.push({ pagePath, date, pageviews, sessions, revenue, transactions })
-      } else {
-        const pageTitle = row.dimensionValues?.[1]?.value || ''
-        allRows.push({ pagePath, pageTitle, pageviews, sessions, revenue, transactions })
+    if (response.rows.length < pageSize) break
+    offset += pageSize
+  }
+
+  // Aggregate by pagePath: sum metrics, keep title from row with most pageviews
+  const byPath = new Map<string, GA4ArticleData>()
+  for (const row of allRows) {
+    const existing = byPath.get(row.pagePath)
+    if (existing) {
+      existing.pageviews += row.pageviews
+      existing.sessions += row.sessions
+      existing.revenue += row.revenue
+      existing.transactions += row.transactions
+      if (row.pageviews > 0 && row.pageviews >= existing.pageviews - row.pageviews) {
+        existing.pageTitle = row.pageTitle
       }
+    } else {
+      byPath.set(row.pagePath, { ...row })
+    }
+  }
+
+  return [...byPath.values()]
+}
+
+export async function fetchBlogArticlesDaily(
+  credentials: GA4Credentials,
+  propertyId: string,
+): Promise<GA4DailyData[]> {
+  const client = createClient(credentials)
+  const allRows: GA4DailyData[] = []
+  let offset = 0
+  const pageSize = 10000
+
+  while (true) {
+    const [response] = await client.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [{ startDate: '30daysAgo', endDate: 'today' }],
+      dimensions: [
+        { name: 'pagePath' },
+        { name: 'date' },
+      ],
+      metrics: [
+        { name: 'screenPageViews' },
+        { name: 'sessions' },
+        { name: 'purchaseRevenue' },
+        { name: 'transactions' },
+      ],
+      limit: pageSize,
+      offset,
+    })
+
+    if (!response.rows || response.rows.length === 0) break
+
+    for (const row of response.rows) {
+      const raw = row.dimensionValues?.[1]?.value || ''
+      const date = raw.length === 8 ? `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}` : raw
+      allRows.push({
+        pagePath: row.dimensionValues?.[0]?.value || '',
+        date,
+        pageviews: parseInt(row.metricValues?.[0]?.value || '0', 10),
+        sessions: parseInt(row.metricValues?.[1]?.value || '0', 10),
+        revenue: parseFloat(row.metricValues?.[2]?.value || '0'),
+        transactions: parseInt(row.metricValues?.[3]?.value || '0', 10),
+      })
     }
 
     if (response.rows.length < pageSize) break
@@ -96,18 +151,4 @@ export async function fetchAllPages(
   }
 
   return allRows
-}
-
-export async function fetchBlogArticles(
-  credentials: GA4Credentials,
-  propertyId: string,
-): Promise<GA4ArticleData[]> {
-  return fetchAllPages(credentials, propertyId, '365daysAgo', 'today', false) as Promise<GA4ArticleData[]>
-}
-
-export async function fetchBlogArticlesDaily(
-  credentials: GA4Credentials,
-  propertyId: string,
-): Promise<GA4DailyData[]> {
-  return fetchAllPages(credentials, propertyId, '30daysAgo', 'today', true) as Promise<GA4DailyData[]>
 }
