@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
   const body = await req.json()
-  const { name, language, property_id, base_url, post_sitemap_path, category_sitemap_path } = body
+  const { name, language, property_id, base_url, post_sitemap_path, category_sitemap_path, search_console_url } = body
 
   if (!name || !language || !property_id) {
     return NextResponse.json({ error: 'Naam, taal en property ID zijn vereist' }, { status: 400 })
@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
 
   const db = getDb()
   const result = db.prepare(
-    'INSERT INTO ga4_properties (name, language, property_id, base_url, post_sitemap_path, category_sitemap_path) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(name, language, property_id, base_url || '', post_sitemap_path || '/post-sitemap.xml', category_sitemap_path || '/category-sitemap.xml')
+    'INSERT INTO ga4_properties (name, language, property_id, base_url, post_sitemap_path, category_sitemap_path, search_console_url) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(name, language, property_id, base_url || '', post_sitemap_path || '/post-sitemap.xml', category_sitemap_path || '/category-sitemap.xml', search_console_url || '')
 
   return NextResponse.json({ id: result.lastInsertRowid })
 }
@@ -29,14 +29,14 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const denied = requireAuth(req); if (denied) return denied
   const body = await req.json()
-  const { id, name, language, property_id, base_url, post_sitemap_path, category_sitemap_path } = body
+  const { id, name, language, property_id, base_url, post_sitemap_path, category_sitemap_path, search_console_url } = body
 
   if (!id) return NextResponse.json({ error: 'ID vereist' }, { status: 400 })
 
   const db = getDb()
   db.prepare(
-    'UPDATE ga4_properties SET name = ?, language = ?, property_id = ?, base_url = ?, post_sitemap_path = ?, category_sitemap_path = ? WHERE id = ?'
-  ).run(name, language, property_id, base_url || '', post_sitemap_path || '/post-sitemap.xml', category_sitemap_path || '/category-sitemap.xml', id)
+    'UPDATE ga4_properties SET name = ?, language = ?, property_id = ?, base_url = ?, post_sitemap_path = ?, category_sitemap_path = ?, search_console_url = ? WHERE id = ?'
+  ).run(name, language, property_id, base_url || '', post_sitemap_path || '/post-sitemap.xml', category_sitemap_path || '/category-sitemap.xml', search_console_url || '', id)
 
   return NextResponse.json({ ok: true })
 }

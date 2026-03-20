@@ -57,6 +57,15 @@ interface GA4PropertyForm {
   base_url: string
   post_sitemap_path: string
   category_sitemap_path: string
+  search_console_url: string
+}
+
+interface SeedKeyword {
+  id: number
+  keyword: string
+  category: string
+  language: string
+  active: number
 }
 
 const LANGUAGES = [
@@ -88,13 +97,16 @@ export default function Settings({ onClose }: Props) {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [showWcSecret, setShowWcSecret] = useState(false)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'logs'>('dashboard')
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'ga4' | 'woocommerce' | 'keywords' | 'logs'>('dashboard')
   const [logs, setLogs] = useState<{ id: number; level: string; message: string; meta: string | null; created_at: string }[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [expandedLog, setExpandedLog] = useState<number | null>(null)
+  const [seedKeywords, setSeedKeywords] = useState<SeedKeyword[]>([])
+  const [newKeyword, setNewKeyword] = useState({ keyword: '', category: 'general', language: 'en' })
+  const [keywordsLoading, setKeywordsLoading] = useState(false)
 
   const emptyProp: GA4PropertyForm = {
-    name: '', language: 'nl', property_id: '', base_url: '', post_sitemap_path: '/post-sitemap.xml', category_sitemap_path: '/category-sitemap.xml',
+    name: '', language: 'nl', property_id: '', base_url: '', post_sitemap_path: '/post-sitemap.xml', category_sitemap_path: '/category-sitemap.xml', search_console_url: '',
   }
 
   async function fetchProperties() {
@@ -153,6 +165,36 @@ export default function Settings({ onClose }: Props) {
     setLogs([])
   }
 
+  async function fetchKeywords() {
+    setKeywordsLoading(true)
+    try {
+      const res = await fetch('/api/seed-keywords')
+      if (res.ok) setSeedKeywords(await res.json())
+    } finally {
+      setKeywordsLoading(false)
+    }
+  }
+
+  async function addKeyword() {
+    if (!newKeyword.keyword.trim()) return
+    await fetch('/api/seed-keywords', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newKeyword),
+    })
+    setNewKeyword({ keyword: '', category: newKeyword.category, language: newKeyword.language })
+    await fetchKeywords()
+  }
+
+  async function deleteKeyword(id: number) {
+    await fetch('/api/seed-keywords', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    await fetchKeywords()
+  }
+
   async function deleteProp(id: number, name: string) {
     if (!confirm(`Property "${name}" verwijderen?`)) return
     await fetch('/api/properties', {
@@ -191,11 +233,12 @@ export default function Settings({ onClose }: Props) {
                 { id: 'dashboard' as const, label: 'Dashboard' },
                 { id: 'ga4' as const, label: 'Analytics' },
                 { id: 'woocommerce' as const, label: 'WooCommerce' },
+                { id: 'keywords' as const, label: 'Keywords' },
                 { id: 'logs' as const, label: 'Logboek' },
               ].map(tab => (
                 <button
                   key={tab.id}
-                  onClick={() => { setActiveTab(tab.id); if (tab.id === 'logs') fetchLogs() }}
+                  onClick={() => { setActiveTab(tab.id); if (tab.id === 'logs') fetchLogs(); if (tab.id === 'keywords') fetchKeywords() }}
                   className={`w-full text-left px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 ${
                     activeTab === tab.id
                       ? 'text-text-primary bg-surface-3'
@@ -394,6 +437,7 @@ export default function Settings({ onClose }: Props) {
                           <Field label="Base URL" id="prop_base_url" value={editingProp.base_url} onChange={v => setEditingProp(p => p && ({ ...p, base_url: v }))} placeholder="https://speedropeshop.com" />
                           <Field label="Post Sitemap pad" id="prop_post_sitemap" value={editingProp.post_sitemap_path} onChange={v => setEditingProp(p => p && ({ ...p, post_sitemap_path: v }))} placeholder="/post-sitemap.xml" />
                           <Field label="Category Sitemap pad" id="prop_cat_sitemap" value={editingProp.category_sitemap_path} onChange={v => setEditingProp(p => p && ({ ...p, category_sitemap_path: v }))} placeholder="/category-sitemap.xml" />
+                          <Field label="Search Console URL" id="prop_sc_url" value={editingProp.search_console_url} onChange={v => setEditingProp(p => p && ({ ...p, search_console_url: v }))} placeholder="https://speedropeshop.com/" />
                           <div className="flex gap-2 pt-1">
                             <button
                               onClick={saveProp}
@@ -502,6 +546,87 @@ export default function Settings({ onClose }: Props) {
                     onToggle={() => setShowWcSecret(!showWcSecret)}
                     placeholder="cs_..."
                   />
+                </>
+              )}
+
+              {activeTab === 'keywords' && (
+                <>
+                  <div>
+                    <h3 className="text-text-primary text-[13px] font-semibold mb-1">Seed Keywords</h3>
+                    <p className="text-text-tertiary text-[11px] leading-relaxed">
+                      Keywords die gebruikt worden om autocomplete-suggesties op te halen voor content opportunities.
+                    </p>
+                  </div>
+
+                  {/* Add keyword form */}
+                  <div className="bg-surface-0 rounded-xl p-3.5 border border-border-subtle space-y-3">
+                    <div className="flex gap-2">
+                      <input
+                        value={newKeyword.keyword}
+                        onChange={e => setNewKeyword(p => ({ ...p, keyword: e.target.value }))}
+                        placeholder="Bijv. jump rope workout"
+                        onKeyDown={e => { if (e.key === 'Enter') addKeyword() }}
+                        className="flex-1 bg-surface-1 text-text-primary text-[13px] px-3 py-2 rounded-lg outline-none border border-border hover:border-text-tertiary focus:border-accent placeholder:text-text-tertiary transition-colors duration-150"
+                      />
+                      <button
+                        onClick={addKeyword}
+                        className="bg-accent hover:bg-accent-hover text-white text-[13px] font-medium px-3 py-2 rounded-lg transition-colors duration-150 shrink-0"
+                      >
+                        Toevoegen
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <select
+                        value={newKeyword.category}
+                        onChange={e => setNewKeyword(p => ({ ...p, category: e.target.value }))}
+                        className="bg-surface-1 text-text-primary text-[13px] px-3 py-2 rounded-lg outline-none border border-border hover:border-text-tertiary focus:border-accent transition-colors duration-150 cursor-pointer"
+                      >
+                        <option value="general">Algemeen</option>
+                        <option value="speed_rope">Speed Rope</option>
+                        <option value="freestyle">Freestyle</option>
+                        <option value="crossfit">CrossFit</option>
+                        <option value="fitness">Fitness</option>
+                      </select>
+                      <select
+                        value={newKeyword.language}
+                        onChange={e => setNewKeyword(p => ({ ...p, language: e.target.value }))}
+                        className="bg-surface-1 text-text-primary text-[13px] px-3 py-2 rounded-lg outline-none border border-border hover:border-text-tertiary focus:border-accent transition-colors duration-150 cursor-pointer"
+                      >
+                        {LANGUAGES.map(l => (
+                          <option key={l.code} value={l.code}>{l.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Keywords list */}
+                  {keywordsLoading ? (
+                    <div className="flex items-center justify-center py-10">
+                      <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+                    </div>
+                  ) : seedKeywords.length === 0 ? (
+                    <div className="bg-surface-0 rounded-xl p-5 text-center border border-border-subtle">
+                      <p className="text-text-tertiary text-[13px]">Nog geen seed keywords toegevoegd</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {seedKeywords.map(kw => (
+                        <div key={kw.id} className="bg-surface-0 rounded-xl px-3.5 py-2.5 border border-border-subtle hover:border-border transition-colors duration-150 group flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] font-semibold text-text-tertiary bg-surface-3 px-2 py-0.5 rounded-md">{kw.language.toUpperCase()}</span>
+                            <span className="text-[11px] font-medium text-text-tertiary bg-surface-2 px-2 py-0.5 rounded-md">{kw.category}</span>
+                            <span className="text-text-primary text-[13px]">{kw.keyword}</span>
+                          </div>
+                          <button
+                            onClick={() => deleteKeyword(kw.id)}
+                            className="text-text-tertiary hover:text-danger text-[11px] font-medium px-2 py-1 rounded-lg hover:bg-danger-subtle transition-colors opacity-0 group-hover:opacity-100"
+                          >
+                            Verwijder
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </>
               )}
 

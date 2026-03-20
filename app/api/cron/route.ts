@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { log } from '@/lib/logger'
 import { refreshData } from '@/lib/refresh'
+import { refreshOpportunities } from '@/lib/opportunities-refresh'
 
 function getSetting(key: string): string {
   const db = getDb()
@@ -65,17 +66,29 @@ export async function GET(req: NextRequest) {
   try {
     const result = await refreshData()
 
+    // Refresh opportunities after article data
+    let opportunityCount = 0
+    try {
+      const oppResult = await refreshOpportunities()
+      opportunityCount = oppResult.count
+      log('info', `Cron: opportunities ververst: ${opportunityCount}`)
+    } catch (e) {
+      log('error', `Cron: opportunities refresh fout: ${e instanceof Error ? e.message : String(e)}`)
+    }
+
     setSetting('last_auto_refresh', new Date().toISOString())
 
     log('info', `Cron: auto-refresh voltooid`, {
       articles: result.articles?.length || 0,
       daily: result.daily?.length || 0,
+      opportunities: opportunityCount,
     })
 
     return NextResponse.json({
       refreshed: true,
       articles: result.articles?.length || 0,
       daily: result.daily?.length || 0,
+      opportunities: opportunityCount,
     })
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : String(e)

@@ -378,7 +378,17 @@ export default function Home() {
                 <path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3zm0 5a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8zm0 5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-1z" />
               </svg>
             </div>
-            <h1 className="text-[15px] font-semibold text-text-primary">Content Dashboard</h1>
+            <nav className="flex bg-surface-1 rounded-lg p-0.5 border border-border-subtle">
+              <span className="text-[12px] font-medium px-3 py-1.5 rounded-md bg-surface-3 text-text-primary shadow-sm">
+                Dashboard
+              </span>
+              <a
+                href="/opportunities"
+                className="text-[12px] font-medium px-3 py-1.5 rounded-md text-text-tertiary hover:text-text-secondary transition-all duration-150"
+              >
+                Opportunities
+              </a>
+            </nav>
           </div>
           <div className="flex items-center gap-2">
             {cached && <span className="text-text-tertiary text-[11px] bg-surface-2 px-2 py-1 rounded-md">Cache</span>}
