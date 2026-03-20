@@ -44,6 +44,10 @@ function formatNumber(n: number): string {
   return n.toLocaleString('nl-NL')
 }
 
+function Tip({ children, tip }: { children: React.ReactNode; tip: string }) {
+  return <span title={tip} className="cursor-help">{children}</span>
+}
+
 export default function OpportunityDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const [opp, setOpp] = useState<Opportunity | null>(null)
@@ -163,13 +167,19 @@ export default function OpportunityDetail({ params }: { params: Promise<{ id: st
         {/* Title & priority */}
         <div className="mb-6">
           <div className="flex items-center gap-3 mb-2">
-            <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[14px] font-bold tabular-nums border ${priorityColor}`}>
-              {opp.priority_score}
-            </span>
-            <span className={`text-[12px] font-semibold px-2.5 py-1 rounded-md ${DIFFICULTY_COLORS[opp.difficulty]?.bg || 'bg-surface-3'} ${DIFFICULTY_COLORS[opp.difficulty]?.text || 'text-text-tertiary'}`}>
-              {opp.difficulty}
-            </span>
-            <span className="text-[12px] text-text-tertiary bg-surface-2 px-2.5 py-1 rounded-md">{angle}</span>
+            <Tip tip="Prioriteitscore (0-100): gewogen mix van zoekvolume (30%), omzetpotentieel (30%), moeilijkheid (20%) en brand fit (20%)">
+              <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[14px] font-bold tabular-nums border ${priorityColor}`}>
+                {opp.priority_score}
+              </span>
+            </Tip>
+            <Tip tip="Geschatte moeilijkheid: easy = geen/lage concurrentie, medium = positie 11-30, hard = top 10">
+              <span className={`text-[12px] font-semibold px-2.5 py-1 rounded-md ${DIFFICULTY_COLORS[opp.difficulty]?.bg || 'bg-surface-3'} ${DIFFICULTY_COLORS[opp.difficulty]?.text || 'text-text-tertiary'}`}>
+                {opp.difficulty}
+              </span>
+            </Tip>
+            <Tip tip="Artikeltype / invalshoek zoals bepaald door de AI">
+              <span className="text-[12px] text-text-tertiary bg-surface-2 px-2.5 py-1 rounded-md">{angle}</span>
+            </Tip>
           </div>
           <h1 className="text-[22px] font-bold text-text-primary leading-tight mb-2">
             {opp.title_suggestion || opp.keyword}
@@ -181,22 +191,30 @@ export default function OpportunityDetail({ params }: { params: Promise<{ id: st
 
         {/* Metrics grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
-            <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Impressies/mnd</p>
-            <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.monthly_impressions)}</p>
-          </div>
-          <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
-            <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Verwacht verkeer</p>
-            <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.expected_traffic)}</p>
-          </div>
-          <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
-            <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Verwachte omzet</p>
-            <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatCurrency(opp.expected_revenue)}/mnd</p>
-          </div>
-          <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
-            <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Brand fit</p>
-            <p className="text-[18px] font-bold text-text-primary tabular-nums">{opp.brand_fit_score}%</p>
-          </div>
+          <Tip tip="Totaal maandelijkse impressies van alle doelzoekwoorden samen in Google zoekresultaten (Search Console data, 3 maanden gemiddeld). Bij 0: geen Search Console data gevonden voor deze keywords.">
+            <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
+              <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Impressies/mnd</p>
+              <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.monthly_impressions)}</p>
+            </div>
+          </Tip>
+          <Tip tip="Geschat maandelijks verkeer als dit artikel positie 5 bereikt. Berekening: impressies × 5% CTR. Bij 0 impressies wordt 50 als schatting gebruikt.">
+            <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
+              <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Verwacht verkeer</p>
+              <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatNumber(opp.expected_traffic)}</p>
+            </div>
+          </Tip>
+          <Tip tip="Geschatte maandelijkse omzet. Berekening: verwacht verkeer × conversieratio × gem. orderwaarde (beide uit bestaande GA4 data van je artikelen).">
+            <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
+              <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Verwachte omzet</p>
+              <p className="text-[18px] font-bold text-text-primary tabular-nums">{formatCurrency(opp.expected_revenue)}/mnd</p>
+            </div>
+          </Tip>
+          <Tip tip="Hoe goed dit onderwerp past bij het productaanbod. 100 = exact product (speed rope), 80 = jump rope gerelateerd, 60 = crossfit, 40 = algemeen fitness, 10 = niet gerelateerd.">
+            <div className="bg-surface-1 rounded-xl border border-border-subtle p-4">
+              <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-1">Brand fit</p>
+              <p className="text-[18px] font-bold text-text-primary tabular-nums">{opp.brand_fit_score}%</p>
+            </div>
+          </Tip>
         </div>
 
         {/* Current position + existing content */}

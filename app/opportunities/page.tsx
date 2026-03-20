@@ -45,6 +45,10 @@ function formatNumber(n: number): string {
   return n.toLocaleString('nl-NL')
 }
 
+function Tip({ children, tip }: { children: React.ReactNode; tip: string }) {
+  return <span title={tip} className="cursor-help">{children}</span>
+}
+
 function PriorityBadge({ score }: { score: number }) {
   const color = score >= 70
     ? 'bg-success/15 text-success border-success/20'
@@ -52,9 +56,11 @@ function PriorityBadge({ score }: { score: number }) {
       ? 'bg-warning/15 text-warning border-warning/20'
       : 'bg-danger/15 text-danger border-danger/20'
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[12px] font-bold tabular-nums border ${color}`}>
-      {score}
-    </span>
+    <Tip tip="Prioriteitscore (0-100): gewogen mix van zoekvolume (30%), omzetpotentieel (30%), moeilijkheidsgraad (20%) en brand fit (20%)">
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-lg text-[12px] font-bold tabular-nums border ${color}`}>
+        {score}
+      </span>
+    </Tip>
   )
 }
 
@@ -233,18 +239,24 @@ export default function OpportunitiesPage() {
             <div className="bg-surface-1 rounded-2xl border border-border-subtle p-5 mb-4">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-8">
-                  <div>
-                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Artikelideeën</p>
-                    <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{summary.total}</p>
-                  </div>
-                  <div>
-                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Potentiële omzet/mnd</p>
-                    <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{formatCurrency(summary.totalRevenue)}</p>
-                  </div>
-                  <div className="hidden sm:block">
-                    <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Gegenereerd</p>
-                    <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{summary.generated}/{opportunities.length}</p>
-                  </div>
+                  <Tip tip="Aantal actieve artikelideeën (status: nieuw of gepland)">
+                    <div>
+                      <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Artikelideeën</p>
+                      <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{summary.total}</p>
+                    </div>
+                  </Tip>
+                  <Tip tip="Som van verwachte maandelijkse omzet van alle actieve artikelideeën">
+                    <div>
+                      <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Potentiële omzet/mnd</p>
+                      <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{formatCurrency(summary.totalRevenue)}</p>
+                    </div>
+                  </Tip>
+                  <Tip tip="Aantal artikelen waarvoor de volledige tekst al gegenereerd is via AI">
+                    <div className="hidden sm:block">
+                      <p className="text-text-tertiary text-[11px] font-semibold uppercase tracking-wider mb-0.5">Gegenereerd</p>
+                      <p className="text-[22px] font-bold text-text-primary tracking-tight leading-none tabular-nums">{summary.generated}/{opportunities.length}</p>
+                    </div>
+                  </Tip>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="flex items-center gap-1.5 bg-surface-0 border border-border-subtle rounded-lg px-2.5 py-1.5">
@@ -328,23 +340,33 @@ export default function OpportunitiesPage() {
                           </p>
                         )}
                         <div className="flex flex-wrap items-center gap-2 ml-[40px]">
-                          <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${DIFFICULTY_COLORS[opp.difficulty]?.bg || 'bg-surface-3'} ${DIFFICULTY_COLORS[opp.difficulty]?.text || 'text-text-tertiary'}`}>
-                            {opp.difficulty}
-                          </span>
-                          <span className="text-[11px] text-text-tertiary bg-surface-2 px-2 py-0.5 rounded-md">
-                            {opp.source.startsWith('ai_') ? opp.source.replace('ai_', '') : opp.source}
-                          </span>
+                          <Tip tip="Geschatte moeilijkheid om te ranken: easy = geen/lage concurrentie, medium = positie 11-30, hard = top 10">
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-md ${DIFFICULTY_COLORS[opp.difficulty]?.bg || 'bg-surface-3'} ${DIFFICULTY_COLORS[opp.difficulty]?.text || 'text-text-tertiary'}`}>
+                              {opp.difficulty}
+                            </span>
+                          </Tip>
+                          <Tip tip="Type artikel: guide, how-to, comparison, listicle, tips, etc.">
+                            <span className="text-[11px] text-text-tertiary bg-surface-2 px-2 py-0.5 rounded-md">
+                              {opp.source.startsWith('ai_') ? opp.source.replace('ai_', '') : opp.source}
+                            </span>
+                          </Tip>
                           {opp.brand_fit_score >= 60 && (
-                            <span className="text-[11px] font-medium text-accent bg-accent-subtle px-2 py-0.5 rounded-md">Brand fit {opp.brand_fit_score}%</span>
+                            <Tip tip="Hoe goed dit keyword past bij het productaanbod: 100 = exact product, 80 = jump rope gerelateerd, 60 = crossfit/fitness">
+                              <span className="text-[11px] font-medium text-accent bg-accent-subtle px-2 py-0.5 rounded-md">Brand fit {opp.brand_fit_score}%</span>
+                            </Tip>
                           )}
                         </div>
                       </div>
                       <div className="shrink-0 text-right space-y-1">
-                        <p className="text-[16px] font-bold text-text-primary tabular-nums leading-none">
-                          {formatCurrency(opp.expected_revenue)}<span className="text-text-tertiary text-[11px] font-normal">/mnd</span>
-                        </p>
+                        <Tip tip="Verwachte maandelijkse omzet = verwacht verkeer × conversieratio × gem. orderwaarde (berekend uit bestaande GA4 data)">
+                          <p className="text-[16px] font-bold text-text-primary tabular-nums leading-none">
+                            {formatCurrency(opp.expected_revenue)}<span className="text-text-tertiary text-[11px] font-normal">/mnd</span>
+                          </p>
+                        </Tip>
                         <p className="text-text-tertiary text-[11px] tabular-nums">
-                          {formatNumber(opp.monthly_impressions)} imp &middot; {formatNumber(opp.expected_traffic)} bezoekers
+                          <Tip tip="Maandelijkse impressies in Google zoekresultaten (uit Search Console, laatste 3 maanden)">{formatNumber(opp.monthly_impressions)} imp</Tip>
+                          {' · '}
+                          <Tip tip="Verwacht maandelijks verkeer = impressies × geschatte CTR bij positie 5 (~5%)">{formatNumber(opp.expected_traffic)} bezoekers</Tip>
                         </p>
                         <select
                           value={opp.status}

@@ -167,6 +167,35 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
 
   log('info', `Keywords verzameld: ${allKeywords.size} (${gapQueries.length} SC, ${autocompleteTopics.length} autocomplete)`)
 
+  // Helper: find matching keywords using substring/fuzzy matching
+  function findMatchingKeywords(targetKws: string[]): KeywordData[] {
+    const matched: KeywordData[] = []
+    const matchedKeys = new Set<string>()
+
+    for (const target of targetKws) {
+      const t = target.toLowerCase().trim()
+
+      // Exact match first
+      const exact = allKeywords.get(t)
+      if (exact && !matchedKeys.has(t)) {
+        matched.push(exact)
+        matchedKeys.add(t)
+        continue
+      }
+
+      // Substring match: find all keywords that contain this target or vice versa
+      for (const [key, data] of allKeywords) {
+        if (matchedKeys.has(key)) continue
+        if (key.includes(t) || t.includes(key)) {
+          matched.push(data)
+          matchedKeys.add(key)
+        }
+      }
+    }
+
+    return matched
+  }
+
   // 5. AI suggestions — only if no existing opportunities, or explicitly forced
   const anthropicKey = getSetting('anthropic_api_key')
   const aiModel = getSetting('ai_model') || 'claude-haiku-4-5-20251001'
@@ -210,20 +239,21 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
 
     db.transaction((suggestions: ArticleSuggestion[]) => {
       for (const s of suggestions) {
+        const matchedKws = findMatchingKeywords(s.targetKeywords)
+
         let totalImpressions = 0
         let bestPosition: number | null = null
         let bestPage: string | null = null
 
-        for (const kw of s.targetKeywords) {
-          const data = allKeywords.get(kw.toLowerCase())
-          if (data) {
-            totalImpressions += data.monthlyImpressions
-            if (data.currentPosition && (!bestPosition || data.currentPosition < bestPosition)) {
-              bestPosition = data.currentPosition
-              bestPage = data.bestPage
-            }
+        for (const data of matchedKws) {
+          totalImpressions += data.monthlyImpressions
+          if (data.currentPosition && (!bestPosition || data.currentPosition < bestPosition)) {
+            bestPosition = data.currentPosition
+            bestPage = data.bestPage
           }
         }
+
+        log('info', `AI artikel "${s.title}": ${matchedKws.length} keyword matches, ${totalImpressions} imp/mnd`)
 
         const brandFit = Math.max(...s.targetKeywords.map(k => getBrandFitScore(k)), getBrandFitScore(s.title))
         const diffScore = getDifficultyScore(bestPosition)
@@ -260,22 +290,20 @@ export async function refreshOpportunities(): Promise<{ count: number }> {
 
     db.transaction(() => {
       for (const opp of opps) {
-        // Collect target keywords from description
         const kwMatch = opp.description?.match(/Doelzoekwoorden: (.+)$/)
         const targetKws = kwMatch ? kwMatch[1].split(', ') : [opp.keyword]
+
+        const matchedKws = findMatchingKeywords(targetKws)
 
         let totalImpressions = 0
         let bestPosition: number | null = null
         let bestPage: string | null = null
 
-        for (const kw of targetKws) {
-          const data = allKeywords.get(kw.toLowerCase())
-          if (data) {
-            totalImpressions += data.monthlyImpressions
-            if (data.currentPosition && (!bestPosition || data.currentPosition < bestPosition)) {
-              bestPosition = data.currentPosition
-              bestPage = data.bestPage
-            }
+        for (const data of matchedKws) {
+          totalImpressions += data.monthlyImpressions
+          if (data.currentPosition && (!bestPosition || data.currentPosition < bestPosition)) {
+            bestPosition = data.currentPosition
+            bestPage = data.bestPage
           }
         }
 
