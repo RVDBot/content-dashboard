@@ -53,6 +53,13 @@ export async function generateArticleSuggestions(
 
   const client = new Anthropic({ apiKey })
 
+  // Get existing articles to avoid duplicates
+  const db = getDb()
+  const existingArticles = db.prepare('SELECT url, title FROM articles').all() as { url: string; title: string }[]
+  const existingList = existingArticles
+    .map(a => `- "${a.title}" (${a.url})`)
+    .join('\n')
+
   // Take top 300 keywords by impressions for the prompt
   const topKeywords = [...keywords]
     .sort((a, b) => b.monthlyImpressions - a.monthlyImpressions)
@@ -80,6 +87,9 @@ For each article, provide:
 3. **targetKeywords**: Array of keywords from the list this article would rank for (include keywords from multiple languages if applicable)
 4. **angle**: One of: "guide", "comparison", "listicle", "how-to", "explanation", "review", "tips"
 
+Existing blog articles (DO NOT suggest articles covering the same or very similar topics):
+${existingList || '(none yet)'}
+
 Rules:
 - Exactly 10 articles, sorted by estimated business impact (highest first)
 - Focus on topics that are universal across cultures (not market-specific)
@@ -87,6 +97,7 @@ Rules:
 - Group related keywords into one article — don't make separate articles for similar queries
 - Skip branded competitor keywords
 - Each article should target a different topic cluster
+- Do NOT suggest topics already covered by existing articles above
 
 Respond ONLY with a JSON array of 10 objects. No markdown, no explanation.
 [{"title":"...","description":"...","targetKeywords":["kw1","kw2"],"angle":"guide"}]`

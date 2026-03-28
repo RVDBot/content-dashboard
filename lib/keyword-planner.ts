@@ -89,6 +89,35 @@ export async function fetchKeywordVolumes(
         body: JSON.stringify({
           keywords: batch,
           keywordPlanNetwork: 'GOOGLE_SEARCH',
+          geoTargetConstants: [
+            'geoTargetConstants/2040',  // Austria
+            'geoTargetConstants/2056',  // Belgium
+            'geoTargetConstants/2100',  // Bulgaria
+            'geoTargetConstants/2191',  // Croatia
+            'geoTargetConstants/2196',  // Cyprus
+            'geoTargetConstants/2203',  // Czech Republic
+            'geoTargetConstants/2208',  // Denmark
+            'geoTargetConstants/2233',  // Estonia
+            'geoTargetConstants/2246',  // Finland
+            'geoTargetConstants/2250',  // France
+            'geoTargetConstants/2276',  // Germany
+            'geoTargetConstants/2300',  // Greece
+            'geoTargetConstants/2348',  // Hungary
+            'geoTargetConstants/2372',  // Ireland
+            'geoTargetConstants/2380',  // Italy
+            'geoTargetConstants/2428',  // Latvia
+            'geoTargetConstants/2440',  // Lithuania
+            'geoTargetConstants/2442',  // Luxembourg
+            'geoTargetConstants/2470',  // Malta
+            'geoTargetConstants/2528',  // Netherlands
+            'geoTargetConstants/2616',  // Poland
+            'geoTargetConstants/2620',  // Portugal
+            'geoTargetConstants/2642',  // Romania
+            'geoTargetConstants/2703',  // Slovakia
+            'geoTargetConstants/2705',  // Slovenia
+            'geoTargetConstants/2724',  // Spain
+            'geoTargetConstants/2752',  // Sweden
+          ],
         }),
       }
     )
